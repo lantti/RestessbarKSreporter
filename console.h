@@ -1,9 +1,7 @@
 #ifndef CONSOLE_H
 #define CONSOLE_H
 
-#define CMDLINE_SIZE         64
-
-void start_console();
+void start_console(int cmdline_length);
 void stop_console();
 void write_console(char* message);
 #endif /* CONSOLE_H */

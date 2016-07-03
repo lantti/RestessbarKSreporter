@@ -16,13 +16,25 @@
 #include "telecom.h"
 
 
+#define CONSOLE_CMDLINE_SIZE_NAME "console_cmdline_size"
+#define DEFAULT_CONSOLE_CMDLINE_SIZE 64
+
+#define TELECOM_APN_NAME "apn"
+#define DEFAULT_TELECOM_APN "gprs.swisscom.ch"
+
+#define DEFAULT_MEASUREMENT_AVERAGING            5
+#define DEFAULT_MEASUREMENT_INTERVAL 1000
+#define DEFAULT_MEASUREMENT_RESULT_BUFFER_SIZE   8
+
+#define ADC_SCL              43
+#define ADC_SDA              44
+
 #define REDLED               17
 #define GREENLED             15
 #define BLUELED              12
 
-
+#define CONF_FILENAME        u"C:\\config.txt"
 #define LOG_FILENAME        u"C:\\event_log.txt"
-#define APN                  "gprs.swisscom.ch"
 
 VM_DCL_HANDLE gpio_red_handle = VM_DCL_HANDLE_INVALID;
 VM_DCL_HANDLE gpio_green_handle = VM_DCL_HANDLE_INVALID;
@@ -63,8 +75,15 @@ void init_leds() {
 static void handle_sysevent(VMINT event, VMINT param)
 {
     char text_buffer[64];
+    int console_cmdline_size;
     switch (event) {
         case VM_EVENT_CREATE:
+            open_conf(CONF_FILENAME);
+            if (!read_conf_int(CONSOLE_CMDLINE_SIZE_NAME, &console_cmdline_size))
+            {
+                console_cmdline_size = DEFAULT_CONSOLE_CMDLINE_SIZE;
+            }
+            close_conf();
             start_log(LOG_FILENAME);
             init_leds();
             start_console();

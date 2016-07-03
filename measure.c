@@ -7,18 +7,40 @@
 #include "log.h"
 #include "measure.h"
 
+typedef struct 
+{
+    VMUINT result_buffer_size;
+    VMINT* result_buffer;
+    vm_mutex_t result_buffer_mutex;
+    VMUINT averaging;
+    VMINT* averaging_buffer;
+    VMUINT measurement_interval;
+    VMBOOL running_measurement;
+    VMBOOL stop_requested;
+    vm_mutex_t measurement_mutex;
+    VM_DCL_HANDLE scl_handle;
+    VM_DCL_HANDLE sda_handle;
 
-static VM_DCL_HANDLE gpio_adc_scl_handle = VM_DCL_HANDLE_INVALID;
-static VM_DCL_HANDLE gpio_adc_sda_handle = VM_DCL_HANDLE_INVALID;
+} handle_details;
 
-static VMINT averaging_buffer[AVERAGING];
-static VMINT averaging_point;
-static VMINT result_buffer[RESULT_BUFFER_SIZE];
-static VMINT result_buffer_read_point;
-static VMINT result_buffer_write_point;
-static VMBOOL run_measurement;
-static vm_mutex_t result_buffer_mutex;
-static vm_mutex_t run_measurement_mutex;
+
+handle_details* open_handles[MAX_HANDLE + 1] = {NULL};
+
+//static VM_DCL_HANDLE gpio_adc_scl_handle = VM_DCL_HANDLE_INVALID;
+//static VM_DCL_HANDLE gpio_adc_sda_handle = VM_DCL_HANDLE_INVALID;
+
+//static VMINT* averaging_buffer = NULL;
+//static VMINT averaging_buffer_size;
+//static VMINT averaging_point;
+//static VMINT* result_buffer = NULL;
+//static VMINT result_buffer_size;
+//static VMINT result_buffer_read_point;
+//static VMINT result_buffer_write_point;
+//static VMINT interval;
+//static VMBOOL run_measurement;
+//static vm_mutex_t result_buffer_mutex;
+//static vm_mutex_t run_measurement_mutex;
+
 
 
 static void publish_result(VMINT result)
@@ -114,11 +136,101 @@ static VMINT32 measurement(VM_THREAD_HANDLE handle, void* user_data)
     vm_mutex_unlock(&run_measurement_mutex);
 }
 
-
-void start_measurement()
+static handle_details* get_handle_details(ADC_HANDLE handle)
 {
-    vm_mutex_init(&result_buffer_mutex);
-    vm_mutex_init(&run_measurement_mutex);
+    if (handle < 0 && handle > MAX_HANDLE)
+    {
+        return NULL;
+    }
+
+    return open_handles[handle];
+}
+
+
+VMINT open_adc(int scl_pin, int sda_pin, int result_buffer_size)
+{
+    ADC_HANDLE handle = 0;
+    handle_details* details;
+    while (open_handles[handle] != NULL)
+    {
+        handle++;
+        if (handle > MAX_HANDLE)
+        {
+            return ADC_HANDLE_INVALID;
+        }
+    }
+
+    details = vm_calloc(size_of(handle_details);
+    if (details == NULL)
+    {
+        return ADC_HANDLE_INVALID;
+    }
+    details->averaging = 0;
+    details->averaging_buffer = NULL;
+    details->measurement_interval = 0;
+    details->running_measurement = FALSE;
+    details->stop_requested = FALSE;
+    vm_mutex_init(&details->result_buffer_mutex);
+    vm_mutex_init(&details->measurement_mutex);
+    details->result_buffer_size = result_buffer_size;
+
+    details->result_buffer = vm_calloc(result_buffer_size);
+    if (details->result_buffer == NULL)
+    {
+        vm_free(details);
+        return ADC_HANDLE_INVALID;
+    }
+
+    details->scl_handle = vm_dcl_open(VM_DCL_GPIO, scl_pin);
+    if (details->scl_handle == VM_DCL_HANDLE_INVALID)
+    {
+        vm_free(details->result_buffer);
+        vm_free(details);
+        return ADC_HANDLE_INVALID;
+    }
+    vm_dcl_control(details->scl_handle, VM_DCL_GPIO_COMMAND_SET_MODE_0, NULL);
+    vm_dcl_control(details->scl_handle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_OUT, NULL);
+    vm_dcl_control(details->scl_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
+
+    details->sda_handle = vm_dcl_open(VM_DCL_GPIO, sda_pin);
+    if (details->sda_handle == VM_DCL_HANDLE_INVALID)
+    {
+        vm_dcl_close(details->scl_handle);
+        vm_free(details->result_buffer);
+        vm_free(details);
+        return ADC_HANDLE_INVALID;
+    }
+    vm_dcl_control(details->sda_handle, VM_DCL_GPIO_COMMAND_SET_MODE_0, NULL);
+    vm_dcl_control(details->sda_handle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_IN, NULL);
+
+    open_handles[handle] = details;
+}
+
+
+void close_adc(ADC_HANDLE handle)
+{
+    handle_details* details;
+    VMBOOL running;
+    details = get_handle_details(handle);
+    if (details != NULL)
+    {
+        vm_mutex_lock(&details->measurement_mutex);
+        vm_mutex_lock(&details->result_buffer_mutex);
+        open_handles[handle] = NULL;
+        if (details->running_measurement == TRUE)
+        {
+            write_log("OOPS! Closing adc handle while measurement runs. Measurement thread might be permanently blocked now");
+        }
+        vm_dcl_close(details->sda_handle);
+        vm_dcl_close(details->scl_handle);
+        vm_free(details->averaging_buffer);
+        vm_free(details->result_buffer);
+        vm_free(details);
+    }
+}
+
+VMBOOL start_measurement(ADC_HANDLE handle, int averaging, int measurement_interval)
+{
 
     vm_mutex_lock(&result_buffer_mutex);
     result_buffer_read_point = 0;
@@ -126,30 +238,25 @@ void start_measurement()
     vm_mutex_unlock(&result_buffer_mutex);
 
     vm_mutex_lock(&run_measurement_mutex);
+    result_buffer_size = 
     averaging_point = 0;
+    interval = measurement_interval();
     run_measurement = TRUE;
     vm_mutex_unlock(&run_measurement_mutex);
 
 
-    gpio_adc_scl_handle = vm_dcl_open(VM_DCL_GPIO, ADC_SCL);
-    if (gpio_adc_scl_handle != VM_DCL_HANDLE_INVALID)
-    {
-        vm_dcl_control(gpio_adc_scl_handle, VM_DCL_GPIO_COMMAND_SET_MODE_0, NULL);
-        vm_dcl_control(gpio_adc_scl_handle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_OUT, NULL);
-        vm_dcl_control(gpio_adc_scl_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
-    }
 
-    gpio_adc_sda_handle = vm_dcl_open(VM_DCL_GPIO, ADC_SDA);
-    if (gpio_adc_sda_handle != VM_DCL_HANDLE_INVALID)
+    if ()
     {
-        vm_dcl_control(gpio_adc_sda_handle, VM_DCL_GPIO_COMMAND_SET_MODE_0, NULL);
-        vm_dcl_control(gpio_adc_sda_handle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_IN, NULL);
+        vm_thread_create(measurement, (void*) NULL, (VM_THREAD_PRIORITY) 0);
     }
-
-    vm_thread_create(measurement, (void*) NULL, (VM_THREAD_PRIORITY) 0);
+    else
+    {
+        stop_measurement();
+    }
 }
 
-VMBOOL get_measurement_result(VMINT* result)
+VMBOOL get_measurement_result(ADC_HANDLE handle, VMINT* result)
 {
     VMBOOL result_available = FALSE;
 
@@ -164,7 +271,7 @@ VMBOOL get_measurement_result(VMINT* result)
     return result_available;
 }
 
-void stop_measurement()
+void stop_measurement(ADC_HANDLE handle)
 {
     vm_mutex_lock(&run_measurement_mutex);
     run_measurement = FALSE;

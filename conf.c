@@ -5,10 +5,32 @@
 #include "vmmemory.h"
 #include "conf.h"
 
+static VM_FS_HANDLE conf_handle;
+static VMBOOL conf_handle_valid = FALSE;
+
+void open_conf(VMCWSTR conf_file_name)
+{
+    VMINT res;
+    if (conf_handle_valid)
+    {
+        close_conf();
+    }
+    res = vm_fs_open(conf_file_name, VM_FS_MODE_READ, VM_FALSE);
+    if (VM_IS_SUCCEEDED(res))
+    {
+        conf_handle = res;
+        VMBOOL conf_handle_valid = TRUE;
+    }
+}
+
+void close_conf();
+{
+        vm_fs_close(conf_handle);
+        VMBOOL conf_handle_valid = FALSE;
+}
 
 VMBOOL read_conf_string(VMSTR variable_name, VMSTR output_buffer, VMUINT output_buffer_size) {
     VMINT res;
-    VM_FS_HANDLE conf_handle;
     VMUINT conf_size;
     VMUINT bytes_read;
     VMSTR conf_data;
@@ -16,10 +38,8 @@ VMBOOL read_conf_string(VMSTR variable_name, VMSTR output_buffer, VMUINT output_
     VMSTR value;
     VMBOOL result_string_valid = FALSE;
 
-    res = vm_fs_open(CONF_FILENAME, VM_FS_MODE_READ, VM_FALSE);
-    if (VM_IS_SUCCEEDED(res))
+    if (conf_handle_valid)
     {
-        conf_handle = res;
         res = vm_fs_get_size(conf_handle, &conf_size);
         if (VM_IS_SUCCEEDED(res))
         {
@@ -45,7 +65,6 @@ VMBOOL read_conf_string(VMSTR variable_name, VMSTR output_buffer, VMUINT output_
                 vm_free(conf_data);
             }
         }
-        vm_fs_close(conf_handle);
     }
     return result_string_valid;
 }

@@ -10,6 +10,7 @@
 #include "vmgsm_sms.h"
 #include "vmgsm_cell.h"
 #include "vmhttps.h"
+#include "vmmemory.h"
 #include "log.h"
 #include "telecom.h"
 #include "report.h"
@@ -20,9 +21,12 @@
 static VM_DCL_HANDLE usb_handle = VM_DCL_HANDLE_INVALID;
 static VM_DCL_OWNER_ID g_owner_id = 0;
 
-static char request_host[CMDLINE_SIZE+1] = {0};
-static char request_path[CMDLINE_SIZE+1] = {0};
-static char request_content[CMDLINE_SIZE+1] = {0};
+static int max_cmdline_size = 0;
+static VMBOOL cmdline_overflow = FALSE;
+static char* cmdline = NULL;
+static char* request_host = NULL;
+static char* request_path = NULL;
+static char* request_content = NULL;
 
 
 static void http_done_callback(VM_HTTPS_RESULT result, VMUINT16 status, VM_HTTPS_METHOD method, char* url, char* headers, char* body)
@@ -38,7 +42,7 @@ static void http_done_callback(VM_HTTPS_RESULT result, VMUINT16 status, VM_HTTPS
     write_console("\n");
 }
 
-static void run_command(char* cmdline)
+static void run_command()
 {
     char buffer[64] = {0};
     VMINT intvalue;
@@ -153,47 +157,91 @@ static void run_command(char* cmdline)
     }
 }
 
+static void append_cmdline(char* new_tail)
+{
+    int i = 0;
+    char* trimmed;
+    char* end;
+
+    while (new_tail[i] == '\n' || new_tail[i] == '\r')
+    {
+        i++;
+    }
+    trimmed = &new_tail[i];
+    end = trimmed;
+    while (new_tail[i] != 0)
+    {
+        i++;
+        if (new_tail[i] != '\n' || new_tail[i] != '\r')
+        {
+            end = &new_tail[i];
+        }
+    }
+    end[1] = 0;
+
+    if (strlen(cmdline) + strlen(trimmed) <= max_cmdline_size)
+    { 
+        strcat(cmdline, trimmed);
+    }
+    else
+    {
+        cmdline[0] = 0;
+        cmdline_overflow = TRUE;
+        write_console("\nError: max. command line length exceeded\n");
+    }
+}
+
 static void usb_receive_callback(void* user_data, VM_DCL_EVENT event, VM_DCL_HANDLE device_handle)
 {
-    static char cmdline[CMDLINE_SIZE+1];
-    static VMINT cmdline_end = 0;
-    char recv[8];
+    char recv[9];
+    char* head;
+    char* leftovers;
     char error_text[] = "\nError: max. command line length exceeded\n";
     VM_DCL_BUFFER_LENGTH returned = 0;
     VM_DCL_BUFFER_LENGTH written = 0;
     if(event == VM_DCL_SIO_UART_READY_TO_READ)
     {
-        vm_dcl_read(device_handle, (VM_DCL_BUFFER *)recv, 8, &returned, g_owner_id);
-        vm_dcl_write(usb_handle, (VM_DCL_BUFFER *)recv, returned, &written, g_owner_id);
-        if (recv[0] == '\n' || recv[0] == '\r')
-        {
-            cmdline[cmdline_end] = 0;
-            cmdline_end = 0;
-            run_command(cmdline);
-        }
-        else
-        {
-            cmdline[cmdline_end] = recv[0];
-            cmdline_end++;
-            if (cmdline_end >= CMDLINE_SIZE)
+        while (vm_dcl_read(device_handle, (VM_DCL_BUFFER *)recv, 8, &returned, g_owner_id) == VM_DCL_STATUS_OK && returned > 0)
+            recv[returned] = 0;
+            write_console(recv);
+            head = recv;
+            leftovers = strpbrk(head, "\n\r");
+            while (leftovers != NULL)
             {
-                cmdline_end = 0;
-                vm_dcl_write(usb_handle, (VM_DCL_BUFFER *)error_text, strlen(error_text), &written, g_owner_id);
+                *leftovers = 0;
+                append_cmdline(head);
+                if (!cmdline_overflow)
+                {
+                    run_command();
+                }
+                cmdline[0] = 0;
+                cmdline_overflow = FALSE;
+                head = &leftovers[1];
+                leftovers = strpbrk(head, "\n\r");
             }
-        }
+
+            append_cmdline(head);
     }
 }
 
 
-
-void start_console()
+void start_console(int cmdline_length)
 {
     vm_dcl_sio_control_dcb_t settings;
-    if (usb_handle != VM_DCL_HANDLE_INVALID)
-    {
-        vm_dcl_close(usb_handle);
-        usb_handle = VM_DCL_HANDLE_INVALID;
-    }
+
+    stop_console();
+
+    max_cmdline_size = cmdline_length;
+//    if (!read_conf_int(CMDLINE_SIZE_NAME, &max_cmdline_size))
+//    {
+//        max_cmdline_size = DEFAULT_CMDLINE_SIZE;
+//    }
+
+
+    cmdline = vm_calloc(max_cmdline_size+1);
+    request_host = vm_calloc(max_cmdline_size+1);
+    request_path = vm_calloc(max_cmdline_size+1);
+    request_content = vm_calloc(max_cmdline_size+1);
 
     g_owner_id = vm_dcl_get_owner_id();
     settings.owner_id = g_owner_id;
@@ -207,12 +255,15 @@ void start_console()
     settings.config.sw_xon_char = 0x11;
 
     usb_handle = vm_dcl_open(VM_DCL_SIO_USB_PORT1, g_owner_id);
-    vm_dcl_control(usb_handle, VM_DCL_SIO_COMMAND_SET_DCB_CONFIG, (void *)&settings);
-    vm_dcl_register_callback(usb_handle, VM_DCL_SIO_UART_READY_TO_READ, usb_receive_callback, (void*)NULL);
-
-    strcpy(request_host, "requestb.in");
-    strcpy(request_path, "/r93i81r9");
-    strcpy(request_content, "tititi=tyy");
+    if (cmdline != NULL && request_host != NULL && request_path != NULL && request_content != NULL && usb_handle != VM_DCL_HANDLE_INVALID)
+    {
+        vm_dcl_control(usb_handle, VM_DCL_SIO_COMMAND_SET_DCB_CONFIG, (void *)&settings);
+        vm_dcl_register_callback(usb_handle, VM_DCL_SIO_UART_READY_TO_READ, usb_receive_callback, (void*)NULL);
+    }
+    else
+    {
+        stop_console();
+    }
 }
 
 void stop_console()
@@ -220,7 +271,18 @@ void stop_console()
     if (usb_handle != VM_DCL_HANDLE_INVALID)
     {
         vm_dcl_close(usb_handle);
+        usb_handle = VM_DCL_HANDLE_INVALID;
     }
+
+    max_cmdline_size = 0;
+    vm_free(cmdline);
+    cmdline = NULL;
+    vm_free(request_host);
+    request_host = NULL;
+    vm_free(request_path);
+    request_path = NULL;
+    vm_free(request_content);
+    request_content = NULL;
 }
 
 void write_console(char* message)

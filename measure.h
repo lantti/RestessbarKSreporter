@@ -1,16 +1,16 @@
 #ifndef MEASURE_H
 #define MEASURE_H
 
-//#define AVERAGING            60
-#define AVERAGING            5
-#define MEASUREMENT_INTERVAL 1000
-#define RESULT_BUFFER_SIZE   8
-#define MAX_REPORT_INTERVAL  (MEASUREMENT_INTERVAL*AVERAGING*RESULT_BUFFER_SIZE)
+#define ADC_HANDLE_INVALID -1
+#define MAX_HANDLE 3
 
-#define ADC_SCL              43
-#define ADC_SDA              44
+typedef VMINT ADC_HANDLE;
 
-void start_measurement();
-void stop_measurement();
-VMBOOL get_measurement_result(VMINT* result);
+VMINT open_adc(int scl_pin, int sda_pin, int result_buffer_size);
+void close_adc(ADC_HANDLE handle);
+
+VMBOOL start_measurement(ADC_HANDLE handle, int averaging, int measurement_interval);
+void stop_measurement(ADC_HANDLE handle);
+
+VMBOOL get_measurement_result(ADC_HANDLE handle, VMINT* result);
 #endif /* MEASURE_H */
