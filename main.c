@@ -9,7 +9,7 @@
 #include "vmdcl.h"
 #include "vmdcl_gpio.h"
 #include "vmdcl_sio.h"
-#include "log.h"
+//#include "log.h"
 //#include "report.h"
 //#include "console.h"
 //#include "measure.h"
@@ -79,9 +79,9 @@ static void handle_sysevent(VMINT event, VMINT param)
     int console_cmdline_size;
     switch (event) {
         case VM_EVENT_CREATE:
-            start_log(LOG_FILENAME);
-   //         write_log("Trying!");
-  //          open_conf(CONF_FILENAME);
+//            start_log(LOG_FILENAME);
+//	    write_log("Trying!");
+	    //          open_conf(CONF_FILENAME);
     //        if (!read_conf_int(CONSOLE_CMDLINE_SIZE_NAME, &console_cmdline_size))
       //      {
         //        console_cmdline_size = DEFAULT_CONSOLE_CMDLINE_SIZE;
@@ -92,8 +92,8 @@ static void handle_sysevent(VMINT event, VMINT param)
 //            init_telecom(APN);            
 //            start_measurement();
 //            start_reporting();
-//            write_log("System started!");
-            vm_dcl_control(gpio_blue_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
+//	    write_log("System started!");
+	    //            vm_dcl_control(gpio_blue_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
             break;
 
         case VM_EVENT_QUIT:
@@ -102,12 +102,12 @@ static void handle_sysevent(VMINT event, VMINT param)
 //            stop_console();
             vm_dcl_close(gpio_red_handle);
             vm_dcl_close(gpio_green_handle);
-//            vm_dcl_close(gpio_blue_handle);
+            vm_dcl_close(gpio_blue_handle);
 //            write_log("System stopped.");
-            stop_log();
+//            stop_log();
             break;
-        default:
-            sprintf(text_buffer, "SysEvent: %u:%u", event, param);
+//        default:
+//            sprintf(text_buffer, "SysEvent: %u:%u", event, param);
 //            write_log(text_buffer);
 
     }
