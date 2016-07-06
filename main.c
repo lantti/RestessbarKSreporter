@@ -10,10 +10,11 @@
 #include "vmdcl_gpio.h"
 #include "vmdcl_sio.h"
 #include "log.h"
-#include "report.h"
-#include "console.h"
-#include "measure.h"
-#include "telecom.h"
+//#include "report.h"
+//#include "console.h"
+//#include "measure.h"
+//#include "telecom.h"
+//#include "conf.h"
 
 
 #define CONSOLE_CMDLINE_SIZE_NAME "console_cmdline_size"
@@ -78,35 +79,36 @@ static void handle_sysevent(VMINT event, VMINT param)
     int console_cmdline_size;
     switch (event) {
         case VM_EVENT_CREATE:
-            open_conf(CONF_FILENAME);
-            if (!read_conf_int(CONSOLE_CMDLINE_SIZE_NAME, &console_cmdline_size))
-            {
-                console_cmdline_size = DEFAULT_CONSOLE_CMDLINE_SIZE;
-            }
-            close_conf();
             start_log(LOG_FILENAME);
+   //         write_log("Trying!");
+  //          open_conf(CONF_FILENAME);
+    //        if (!read_conf_int(CONSOLE_CMDLINE_SIZE_NAME, &console_cmdline_size))
+      //      {
+        //        console_cmdline_size = DEFAULT_CONSOLE_CMDLINE_SIZE;
+          //  }
+            //close_conf();
             init_leds();
-            start_console();
-            init_telecom(APN);            
-            start_measurement();
-            start_reporting();
-            write_log("System started!");
+//            start_console(console_cmdline_size);
+//            init_telecom(APN);            
+//            start_measurement();
+//            start_reporting();
+//            write_log("System started!");
             vm_dcl_control(gpio_blue_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
             break;
 
         case VM_EVENT_QUIT:
-            stop_reporting();
-            stop_measurement();
-            stop_console();
+//            stop_reporting();
+//            stop_measurement();
+//            stop_console();
             vm_dcl_close(gpio_red_handle);
             vm_dcl_close(gpio_green_handle);
-            vm_dcl_close(gpio_blue_handle);
-            write_log("System stopped.");
+//            vm_dcl_close(gpio_blue_handle);
+//            write_log("System stopped.");
             stop_log();
             break;
         default:
             sprintf(text_buffer, "SysEvent: %u:%u", event, param);
-            write_log(text_buffer);
+//            write_log(text_buffer);
 
     }
 }
@@ -114,7 +116,7 @@ static void handle_sysevent(VMINT event, VMINT param)
 
 void vm_main(void)
 {
-    start_log(LOG_FILENAME);
+//    start_log(LOG_FILENAME);
     vm_pmng_register_system_event_callback(handle_sysevent);
 }
 

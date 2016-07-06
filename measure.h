@@ -6,11 +6,7 @@
 
 typedef VMINT ADC_HANDLE;
 
-VMINT open_adc(int scl_pin, int sda_pin, int result_buffer_size);
-void close_adc(ADC_HANDLE handle);
-
-VMBOOL start_measurement(ADC_HANDLE handle, int averaging, int measurement_interval);
+ADC_HANDLE start_measurement(int scl_pin, int sda_pin, int measurement_interval, void (*result_callback)(void*, VMINT), void* result_callback_env);
 void stop_measurement(ADC_HANDLE handle);
 
-VMBOOL get_measurement_result(ADC_HANDLE handle, VMINT* result);
 #endif /* MEASURE_H */

@@ -19,14 +19,14 @@ void open_conf(VMCWSTR conf_file_name)
     if (VM_IS_SUCCEEDED(res))
     {
         conf_handle = res;
-        VMBOOL conf_handle_valid = TRUE;
+        conf_handle_valid = TRUE;
     }
 }
 
-void close_conf();
+void close_conf()
 {
         vm_fs_close(conf_handle);
-        VMBOOL conf_handle_valid = FALSE;
+        conf_handle_valid = FALSE;
 }
 
 VMBOOL read_conf_string(VMSTR variable_name, VMSTR output_buffer, VMUINT output_buffer_size) {

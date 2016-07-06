@@ -42,7 +42,7 @@ static void report_timer_callback(VM_TIMER_ID_NON_PRECISE timer_id, void* user_d
     if (report_console) write_console("\n-------------\n");
     if (report_http) strcpy(http_body, "measurements=");
 
-    while(get_measurement_result(&result))
+    while(FALSE)//get_measurement_result(&result))
     {
         result_count++;
         sprintf(text_buffer, "%d_", result);
