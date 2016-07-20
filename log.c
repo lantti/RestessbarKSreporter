@@ -4,8 +4,6 @@
 #include "vmtype.h"
 #include "log.h"
 
-#define LOGFILE u"C:\\log.txt"
-
 static VM_FS_HANDLE log_handle = -1;
 
 void write_log(char* message)
@@ -33,14 +31,14 @@ void start_log(VMCWSTR filename)
         log_handle = -1;
     }
 
-    res = vm_fs_open(LOGFILE, VM_FS_MODE_APPEND, VM_FALSE);
+    res = vm_fs_open(filename, VM_FS_MODE_APPEND, VM_FALSE);
     if (res >= 0)
     {
         log_handle = res;
     }
     else
     {
-        res = vm_fs_open(LOGFILE, VM_FS_MODE_CREATE_ALWAYS_WRITE, VM_FALSE);
+        res = vm_fs_open(filename, VM_FS_MODE_CREATE_ALWAYS_WRITE, VM_FALSE);
         if (res >= 0)
         {
             log_handle = res;

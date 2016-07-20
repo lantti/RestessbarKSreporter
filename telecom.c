@@ -10,9 +10,6 @@
 #include "console.h"
 #include "telecom.h"
 
-#define GETHEADERS "User-Agent: restessbarKS1\r\nAccept: */*\r\nHost: "
-#define POSTHEADERS "Content-Type: application/x-www-form-urlencoded\r\nContent-Length: "
-
 static VM_HTTPS_METHOD method;
 static char url[256];
 static char headers[256];

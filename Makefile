@@ -1,7 +1,6 @@
 PROJECT = KS
 
-OBJECTS += main.o 
-#log.o console.o measure.o telecom.o report.o conf.o
+OBJECTS += main.o log.o console.o measure.o telecom.o report.o conf.o
 SYS_OBJECTS += ./lib/LINKIT10/src/gccmain.o
 
 GCC_BIN ?= /usr/bin/
