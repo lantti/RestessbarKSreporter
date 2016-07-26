@@ -16,19 +16,8 @@
 #include "telecom.h"
 #include "conf.h"
 
-
-#define CONSOLE_CMDLINE_SIZE_NAME "console_cmdline_size"
-#define DEFAULT_CONSOLE_CMDLINE_SIZE 64
-
-#define TELECOM_APN_NAME "apn"
-#define DEFAULT_TELECOM_APN "gprs.swisscom.ch"
-
-#define DEFAULT_MEASUREMENT_AVERAGING            5
-#define DEFAULT_MEASUREMENT_INTERVAL 1000
-#define DEFAULT_MEASUREMENT_RESULT_BUFFER_SIZE   8
-
-#define ADC_SCL              43
-#define ADC_SDA              44
+#define ADC_SCL_A              43
+#define ADC_SDA_A              44
 
 #define REDLED               17
 #define GREENLED             15
@@ -41,6 +30,8 @@ VM_DCL_HANDLE gpio_red_handle = VM_DCL_HANDLE_INVALID;
 VM_DCL_HANDLE gpio_green_handle = VM_DCL_HANDLE_INVALID;
 VM_DCL_HANDLE gpio_blue_handle = VM_DCL_HANDLE_INVALID;
 
+ADC_HANDLE adc_handle_a = ADC_HANDLE_INVALID;
+afifo* result_buffer_a;
 
 
 
@@ -71,39 +62,93 @@ void init_leds() {
 	}
 }
 
+void measure_end(void* buffer, int result)
+{
+	afifo_destroy((afifo*)buffer);
+}
 
+void signal_failure()
+{
+	vm_dcl_control(gpio_red_handle, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
+	vm_dcl_control(gpio_green_handle, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
+	vm_dcl_control(gpio_blue_handle, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
+}
 
 static void handle_sysevent(VMINT event, VMINT param)
 {
 	char text_buffer[64];
-	char apn[64];
-	int console_cmdline_size;
+	char apn[32];
+	char http_host[REPORT_HOSTNAME_MAX];
+	char http_path[REPORT_PATH_MAX];
+	int cmdline_size;
+	int averaging;
+	int res_buf_size;
+	int measure_interval;
+	int report_console;
+	int report_http;
+	int report_interval;
+
+
 	switch (event) {
 		case VM_EVENT_CREATE:
+			init_leds();
 			start_log(LOG_FILENAME);
-			write_log("Trying!");
 			open_conf(CONF_FILENAME);
-			if (!read_conf_int(CONSOLE_CMDLINE_SIZE_NAME, &console_cmdline_size))
+
+			if (read_conf_int("cmdline_size", &cmdline_size) == FALSE)
 			{
-				console_cmdline_size = DEFAULT_CONSOLE_CMDLINE_SIZE;
+				close_conf();
+				signal_failure();
+				break;
 			}
-			if (!read_conf_string(TELECOM_APN_NAME, apn, 64))
+			start_console(cmdline_size);
+
+			if (
+					read_conf_string("apn", apn, 32) == FALSE ||
+					read_conf_string("report_http_host", http_host, REPORT_HOSTNAME_MAX) == FALSE ||
+					read_conf_string("report_http_path", http_path, REPORT_PATH_MAX) == FALSE ||
+					read_conf_int("measurement_averaging", &averaging) == FALSE ||
+					read_conf_int("measurement_buffer_size", &res_buf_size) == FALSE ||
+					read_conf_int("measurement_interval", &measure_interval) == FALSE ||
+					read_conf_int("report_console", &report_console) == FALSE ||
+					read_conf_int("report_http", &report_http) == FALSE ||
+					read_conf_int("report_interval", &report_interval) == FALSE
+			   )
 			{
-				strcpy(apn, DEFAULT_TELECOM_APN);
+				close_conf();
+				signal_failure();
+				break;
 			}
 			close_conf();
-			init_leds();
-			start_console(console_cmdline_size);
-			init_telecom(apn);            
-			//            start_measurement();
-			//            start_reporting();
+
+			init_telecom(apn);
+	    		
+			adc_handle_a = open_hx711(ADC_SCL_A, ADC_SDA_A);
+			result_buffer_a = afifo_create(averaging, res_buf_size);
+			if (adc_handle_a == ADC_HANDLE_INVALID || result_buffer_a == NULL)
+			{
+				signal_failure();
+				break;
+			}
+			set_hx711_a128(adc_handle_a, measure_interval, afifo_write, result_buffer_a);
+			set_report_http_host(http_host);
+			set_report_http_path(http_path);
+			if (report_console)
+			{
+				enable_console_report();
+			}
+			if (report_http)
+			{
+				enable_http_report();
+			}
+			start_reporting(result_buffer_a, report_interval);
+
 			write_log("System started!");
-			//            vm_dcl_control(gpio_blue_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
 			break;
 
 		case VM_EVENT_QUIT:
-			//            stop_reporting();
-			//            stop_measurement();
+			stop_reporting(result_buffer_a);
+			close_hx711(adc_handle_a, measure_end, result_buffer_a);
 			stop_console();
 			vm_dcl_close(gpio_red_handle);
 			vm_dcl_close(gpio_green_handle);
