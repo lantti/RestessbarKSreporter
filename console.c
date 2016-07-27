@@ -125,6 +125,7 @@ static void run_command()
 			}
 			break;
 		case 'S':
+			open_conf(u"C:\\config.txt");
 			if (read_conf_string(&cmdline[1], buffer, 64))
 			{
 				write_console("value for configuration key ");
@@ -139,8 +140,10 @@ static void run_command()
 				write_console(&cmdline[1]);
 				write_console(" not found\n");
 			}
+			close_conf();
 			break;
 		case 'I':
+			open_conf(u"C:\\config.txt");
 			if (read_conf_int(&cmdline[1], &intvalue))
 			{
 				write_console("value for configuration key ");
@@ -155,6 +158,7 @@ static void run_command()
 				write_console(&cmdline[1]);
 				write_console(" not found\n");
 			}
+			close_conf();
 			break;
 		case 'E':
 			write_console(&cmdline[1]);

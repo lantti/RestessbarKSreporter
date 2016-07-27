@@ -6,6 +6,8 @@
 #include "vmhttps.h"
 #include "vmthread.h"
 #include "vmmemory.h"
+#include "vmssl.h"
+#include "vmdatetime.h"
 #include "log.h"
 #include "console.h"
 #include "measure.h"
@@ -30,6 +32,8 @@ static VMBOOL report_http = 0;
 static VMBOOL report_console = 0;
 static char http_host[REPORT_HOSTNAME_MAX];
 static char http_path[REPORT_PATH_MAX];
+static VMBYTE hmac_key[MAX_HMAC_KEY_LENGTH];
+static VMINT hmac_key_length = 0;
 
 afifo* afifo_create(int averaging, int size)
 {
@@ -60,7 +64,7 @@ afifo* afifo_create(int averaging, int size)
 
 void afifo_destroy(afifo* target)
 {
-        vm_mutex_lock(&target->mutex);
+	vm_mutex_lock(&target->mutex);
 	vm_free(target->buffer);
 	vm_free(target);
 }
@@ -70,7 +74,7 @@ void afifo_write(afifo* target, int value)
 	char buffer[64];
 	int head;
 	int tail;
-        vm_mutex_lock(&target->mutex);
+	vm_mutex_lock(&target->mutex);
 	if (target->avg_complete > 0)
 	{
 		target->avg_acc += (double)value / target->avg_complete;
@@ -136,27 +140,75 @@ static void http_done_callback(VM_HTTPS_RESULT result, VMUINT16 status, VM_HTTPS
 
 static void report_timer_callback(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data)
 {
-    VMINT result;
-    VMINT result_count = 0;
-    char text_buffer[10];
-    char http_body[1024];
-    afifo* source;
+	VMINT result;
+	VMINT result_count = 0;
+	VMINT base64_length;
+	VMUINT rtc_time;
+	VMBYTE hmac[20];
+	char tmp_buffer[32];
+	char http_body[1024];
+	afifo* source;
 
-    source = (afifo*)user_data;
+	source = (afifo*)user_data;
 
-    if (report_console) write_console("\n-------------\n");
-    if (report_http) strcpy(http_body, "measurements=");
+	if (report_console)
+	{
+		write_console("\n-------------\n");
+	}
 
-    while(afifo_read(source, &result))
-    {
-        result_count++;
-        sprintf(text_buffer, "%d_", result);
-        if (report_console) write_console(text_buffer);
-        if (report_http && result_count < 100) strcat(http_body, text_buffer);
-    }
+	if (report_http) 
+	{
+		strcpy(http_body, "measurements=");
+	}
 
-    if (report_console) write_console("\n-------------\n");
-    if (report_http) http_post(http_host, http_path, http_body, http_done_callback);
+	while(afifo_read(source, &result))
+	{
+		result_count++;
+		sprintf(tmp_buffer, "%d_", result);
+		if (report_console) 
+		{
+			write_console(tmp_buffer);
+		}
+		if (report_http && result_count < 80)
+		{
+			strcat(http_body, tmp_buffer);
+		}
+	}
+
+	if (report_console)
+	{
+		write_console("\n-------------\n");
+	}
+
+	if (report_http)
+	{
+		strcat(http_body, "\n\rtime=");
+		vm_time_get_unix_time(&rtc_time);
+		sprintf(tmp_buffer, "%u", rtc_time);
+		strcat(http_body, tmp_buffer);
+		strcat(http_body, "\n\rsig=");
+		vm_ssl_sha1_hmac(hmac_key, hmac_key_length, http_body, strlen(http_body), hmac);
+		memset(tmp_buffer, 0, 32);
+		base64_length = 32;
+		vm_ssl_base64_encode(tmp_buffer, &base64_length, hmac, 20);
+		for (int i=0;i<base64_length;i++)
+		{
+			if (tmp_buffer[i] == '+')
+			{
+				tmp_buffer[i] = '-';
+			}
+			else if (tmp_buffer[i] == '/')
+			{
+				tmp_buffer[i] = '_';
+			}
+			else if (tmp_buffer[i] == '=')
+			{
+				tmp_buffer[i] = 0;
+			}
+		}
+		strcat(http_body, tmp_buffer);
+		http_post(http_host, http_path, http_body, http_done_callback);
+	}
 }
 
 
@@ -171,8 +223,8 @@ void start_reporting(afifo* source, int interval)
 
 void stop_reporting(afifo* source)
 {
-    vm_timer_delete_non_precise(source->report_timer);
-    source->report_timer = -1;
+	vm_timer_delete_non_precise(source->report_timer);
+	source->report_timer = -1;
 }
 
 void enable_http_report()
@@ -208,5 +260,19 @@ void set_report_http_path(char* path)
 	if (strlen(path) < REPORT_PATH_MAX)
 	{
 		strcpy(http_path, path);
+	}
+}
+
+void set_report_http_hmac_key(VMBYTE* key, VMINT key_length)
+{
+	if (key_length > MAX_HMAC_KEY_LENGTH)
+	{
+		memcpy(hmac_key, key, MAX_HMAC_KEY_LENGTH);
+		hmac_key_length = MAX_HMAC_KEY_LENGTH;
+	}
+	else
+	{
+		memcpy(hmac_key, key, key_length);
+		hmac_key_length = key_length;
 	}
 }

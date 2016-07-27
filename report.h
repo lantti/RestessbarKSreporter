@@ -5,6 +5,7 @@
 
 #define REPORT_HOSTNAME_MAX 128
 #define REPORT_PATH_MAX 128
+#define MAX_HMAC_KEY_LENGTH 32
 
 typedef struct afifo afifo;
 
@@ -20,4 +21,6 @@ void enable_console_report();
 void disable_console_report();
 void set_report_http_host(char* host);
 void set_report_http_path(char* path);
+void set_report_http_hmac_key(VMBYTE* key, VMINT key_length);
+
 #endif /* REPORT_H */

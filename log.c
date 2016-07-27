@@ -2,6 +2,7 @@
 #include <string.h>
 #include "vmfs.h"
 #include "vmtype.h"
+#include "vmdatetime.h"
 #include "log.h"
 
 static VM_FS_HANDLE log_handle = -1;
