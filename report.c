@@ -158,7 +158,7 @@ static void report_timer_callback(VM_TIMER_ID_NON_PRECISE timer_id, void* user_d
 
 	if (report_http) 
 	{
-		strcpy(http_body, "measurements=");
+		strcpy(http_body, "mes=");
 	}
 
 	while(afifo_read(source, &result))
@@ -182,11 +182,11 @@ static void report_timer_callback(VM_TIMER_ID_NON_PRECISE timer_id, void* user_d
 
 	if (report_http)
 	{
-		strcat(http_body, "\n\rtime=");
+		strcat(http_body, "&time=");
 		vm_time_get_unix_time(&rtc_time);
 		sprintf(tmp_buffer, "%u", rtc_time);
 		strcat(http_body, tmp_buffer);
-		strcat(http_body, "\n\rsig=");
+		strcat(http_body, "&sig=");
 		vm_ssl_sha1_hmac(hmac_key, hmac_key_length, http_body, strlen(http_body), hmac);
 		memset(tmp_buffer, 0, 32);
 		base64_length = 32;
