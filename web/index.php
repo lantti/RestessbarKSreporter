@@ -175,16 +175,52 @@ elseif ($_SERVER['REQUEST_METHOD'] == 'GET')
 		return;
 	}
 
-	while ($stmt->fetch())
+	if ($stmt->fetch())
 	{
-		if ($sub == 0)
+		$time0 = $time;
+		$sub0 = $sub;
+		$val0 = $val;
+		$dataset->addPoint(new Point($time0, $val0));
+	}
+	else
+	{
+		header($_SERVER["SERVER_PROTOCOL"]." 404 Not Found"); 
+		return;
+	}
+
+	if ($stmt->fetch())
+	{
+		$time1 = $time;
+		$sub1 = $sub;
+		$val1 = $val;
+
+		while ($stmt->fetch())
 		{
-			$dataset->addPoint(new Point($time, $val));
+			if ($sub == 0)
+			{
+				$label = $time;
+			}
+			else
+			{
+				$label = '';
+			}
+
+			if ($val0 < $val1 && $val1 > $val)
+			{
+				$dataset->addPoint(new Point($label, (int)(($val0 + $val + 1)/2)));
+			}
+			else
+			{
+				$dataset->addPoint(new Point($label, $val1));
+			}
+			$time0 = $time1;
+			$sub0 = $sub1;
+			$val0 = $val1;
+			$time1 = $time;
+			$sub1 = $sub;
+			$val1 = $val;
 		}
-		else
-		{
-			$dataset->addPoint(new Point('', $val));
-		}
+		$dataset->addPoint(new Point($time1, $val1));
 	}
 	$width = $stmt->num_rows * 10;
 	$stmt->free_result();
