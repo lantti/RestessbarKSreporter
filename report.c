@@ -2,6 +2,7 @@
 #include <string.h>
 #include <math.h>
 #include "vmtype.h"
+#include "vmpwr.h"
 #include "vmtimer.h"
 #include "vmhttps.h"
 #include "vmthread.h"
@@ -127,24 +128,22 @@ VMBOOL afifo_read(afifo* source, int* value)
 
 static void http_done_callback(VM_HTTPS_RESULT result, VMUINT16 status, VM_HTTPS_METHOD method, char* url, char* headers, char* body)
 {
-	if (report_console)
+	if (result == VM_HTTPS_OK)
 	{
-		if (result == VM_HTTPS_OK)
+		vm_fs_delete(current_report_filename);
+
+		if (report_console)
 		{
 			write_console(url);
 			write_console(headers);
 			write_console(body);
 		}
-		else
-		{
-			write_console("HTTP request failed\n");
-		}
+	}
+	else
+	{
+		vm_pwr_reboot();
 	}
 
-	if (result == VM_HTTPS_OK)
-	{
-		vm_fs_delete(current_report_filename);
-	}
 	reporter_busy = FALSE;
 	blue_led_off();
 }

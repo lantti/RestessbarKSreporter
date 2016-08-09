@@ -87,14 +87,8 @@ void measure_end(void* buffer, int result)
 	afifo_destroy((afifo*)buffer);
 }
 
-void check_connection_cb(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data)
+void watchdog_cb(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data)
 {
-	char buffer[VM_GSM_SIM_MAX_PLMN_LENGTH + 1];
-	if (vm_gsm_sim_get_network_plmn(1, buffer, VM_GSM_SIM_MAX_PLMN_LENGTH + 1) != 0)
-	{
-		write_log("Lost GSM connection, restarting...");
-		vm_pwr_reboot();
-	}
 }
 
 void delayed_report_cb(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data)
@@ -193,7 +187,11 @@ static void handle_sysevent(VMINT event, VMINT param)
 
 			init_telecom(apn);
 
-			vm_timer_create_non_precise(watchdog_interval, check_connection_cb, NULL);
+			if (watchdog_interval > 0)
+			{
+				vm_timer_create_non_precise(watchdog_interval, watchdog_cb, NULL);
+			}
+
 			vm_timer_create_non_precise(resend_interval, delayed_report_cb, NULL);
 
 			start_reporting(result_buffer_a, report_interval);
