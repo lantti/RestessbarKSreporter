@@ -157,7 +157,7 @@ elseif ($_SERVER['REQUEST_METHOD'] == 'GET')
 		return;
 	}
 
-	if (!($stmt = $mysqli->prepare("SELECT * FROM measurements WHERE time BETWEEN ? AND ?")) || !$stmt->bind_param('ii', $end, $begin))
+	if (!($stmt = $mysqli->prepare("SELECT * FROM measurements WHERE time BETWEEN ? AND ? LIMIT 20000")) || !$stmt->bind_param('ii', $end, $begin))
 	{
 		header($_SERVER["SERVER_PROTOCOL"]." 404 Not Found"); 
 		return;
