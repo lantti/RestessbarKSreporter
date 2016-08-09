@@ -3,9 +3,10 @@
 
 #include "vmtype.h"
 
-#define REPORT_HOSTNAME_MAX 128
-#define REPORT_PATH_MAX 128
-#define MAX_HMAC_KEY_LENGTH 32
+#define REPORT_TMP_FOLDER     u"C:\\tmp\\" 
+#define REPORT_HOSTNAME_MAX   128
+#define REPORT_PATH_MAX       128
+#define MAX_HMAC_KEY_LENGTH   32
 
 typedef struct afifo afifo;
 
@@ -13,6 +14,7 @@ afifo* afifo_create(int averaging, int size);
 void afifo_destroy(afifo* target);
 void afifo_write(afifo* target, int value);
 VMBOOL afifo_read(afifo* source, int* value);
+void send_delayed_report();
 void start_reporting(afifo* source, int interval);
 void stop_reporting(afifo* source);
 void enable_http_report();

@@ -9,6 +9,8 @@ const char conf_defaults[] = "cmdline_size=64\n"
 			     "report_console=0\n"
 			     "report_http=1\n"
 			     "report_http_hmac_key=1234567890abcdef\n"
+			     "watchdog_interval=20000\n"
+			     "resend_interval=62000\n"
 			     "report_interval=600000\n";
 
 #endif /* CONF_DEFAULTS_H */

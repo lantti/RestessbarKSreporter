@@ -1,6 +1,10 @@
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include "vmsystem.h"
+#include "vmpwr.h"
+#include "vmchset.h"
+#include "vmfs.h"
 #include "vmtype.h"
 #include "vmdcl.h"
 #include "vmdcl_sio.h"
@@ -11,6 +15,7 @@
 #include "vmgsm_cell.h"
 #include "vmhttps.h"
 #include "vmmemory.h"
+#include "vmdatetime.h"
 #include "log.h"
 #include "telecom.h"
 #include "report.h"
@@ -52,6 +57,10 @@ static void run_command()
 {
 	char buffer[64] = {0};
 	VMINT intvalue;
+	char* time_str_ptr;
+	VMUINT unixtime;
+	vm_date_time_t datetime;
+
 	switch(cmdline[0])
 	{
 		case '?':
@@ -164,6 +173,61 @@ static void run_command()
 			write_console(&cmdline[1]);
 			write_console("\n");
 			break;
+		case 'T':
+			strcpy(buffer, &cmdline[1]);
+			time_str_ptr = strtok(buffer, "/");
+			if (time_str_ptr == NULL)
+			{
+				write_console("Invalid date time\n");
+				break;
+			}
+			datetime.year = strtol(time_str_ptr, NULL, 10);
+			time_str_ptr = strtok(NULL, "/");
+			if (time_str_ptr == NULL)
+			{
+				write_console("Invalid date time\n");
+				break;
+			}
+			datetime.month = strtol(time_str_ptr, NULL, 10);
+			time_str_ptr = strtok(NULL, "/");
+			if (time_str_ptr == NULL)
+			{
+				write_console("Invalid date time\n");
+				break;
+			}
+			datetime.day = strtol(time_str_ptr, NULL, 10);
+			time_str_ptr = strtok(NULL, "/");
+			if (time_str_ptr == NULL)
+			{
+				write_console("Invalid date time\n");
+				break;
+			}
+			datetime.hour = strtol(time_str_ptr, NULL, 10);
+			time_str_ptr = strtok(NULL, "/");
+			if (time_str_ptr == NULL)
+			{
+				write_console("Invalid date time\n");
+				break;
+			}
+			datetime.minute = strtol(time_str_ptr, NULL, 10);
+			time_str_ptr = strtok(NULL, "/");
+			if (time_str_ptr == NULL)
+			{
+				write_console("Invalid date time\n");
+				break;
+			}
+			datetime.second = strtol(time_str_ptr, NULL, 10);
+
+			if (vm_time_set_date_time(&datetime) < 0)
+			{
+				write_console("Invalid date time\n");
+				break;
+			}
+
+			vm_time_get_unix_time(&unixtime);
+			sprintf(buffer, "new time: %u\n", unixtime);
+			write_console(buffer);
+			break;
 		case 'O':
 			m_handle = open_hx711(43, 44);
 			result_buffer = afifo_create(10, 60);
@@ -185,6 +249,12 @@ static void run_command()
 				write_console(buffer);
 			}
 			write_console("\n");
+			break;
+		case 'D':
+			send_delayed_report();
+			break;
+		case 'Q':
+			vm_pwr_reboot();
 			break;
 	}
 }
