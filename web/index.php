@@ -220,7 +220,7 @@ elseif ($_SERVER['REQUEST_METHOD'] == 'GET')
 			$sub1 = $sub;
 			$val1 = $val;
 		}
-		$dataset->addPoint(new Point($time1, $val1));
+		$dataset->addPoint(new Point('', $val1));
 	}
 	$width = $stmt->num_rows * 10;
 	$stmt->free_result();
