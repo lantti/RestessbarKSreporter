@@ -141,7 +141,19 @@ static void http_done_callback(VM_HTTPS_RESULT result, VMUINT16 status, VM_HTTPS
 	}
 	else
 	{
+		write_log("Sending failed, rebooting");
 		vm_pwr_reboot();
+	}
+
+	reporter_busy = FALSE;
+	blue_led_off();
+}
+
+static void http_done_callback_delayed(VM_HTTPS_RESULT result, VMUINT16 status, VM_HTTPS_METHOD method, char* url, char* headers, char* body)
+{
+	if (result == VM_HTTPS_OK)
+	{
+		vm_fs_delete(current_report_filename);
 	}
 
 	reporter_busy = FALSE;
@@ -270,7 +282,7 @@ void send_delayed_report()
 				vm_fs_close(report_handle);
 				if (res >= 0)
 				{
-					http_post(http_host, http_path, http_body, http_done_callback);
+					http_post(http_host, http_path, http_body, http_done_callback_delayed);
 				}
 			}
 		}

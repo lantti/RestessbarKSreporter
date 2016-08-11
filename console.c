@@ -253,6 +253,24 @@ static void run_command()
 		case 'D':
 			send_delayed_report();
 			break;
+		case 'M':
+			if (cmdline[1] == '0')
+			{
+				intvalue = VM_GSM_SIM_NO_SIM;
+			}
+			else if (cmdline[1] == '1')
+			{
+				intvalue = VM_GSM_SIM_SIM1;
+			}
+			if (vm_gsm_sim_set_active_sim_card(intvalue) == VM_TRUE)
+			{
+				write_console("ok\n");
+			}
+			else
+			{
+				write_console("fail\n");
+			}
+			break;
 		case 'Q':
 			vm_pwr_reboot();
 			break;

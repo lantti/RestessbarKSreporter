@@ -95,6 +95,28 @@ function save_measurements(array $datapoints)
 	return true;
 }
 
+function calibrate($val)
+{
+	if (isset($_GET['z']) && ctype_digit($_GET['z']))
+	{
+		$cal_zero = (int)$_GET['z'];
+	}
+	else
+	{
+		$cal_zero = 1300000;
+	}
+
+	if (isset($_GET['s']) && ctype_digit($_GET['s']))
+	{
+		$cal_scale = (int)$_GET['s'];
+	}
+	else
+	{
+		$cal_scale = 1;
+	}
+
+	return (integer)(($val / $cal_scale) - $cal_zero);
+}
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST')
 {
@@ -180,7 +202,7 @@ elseif ($_SERVER['REQUEST_METHOD'] == 'GET')
 		$time0 = $time;
 		$sub0 = $sub;
 		$val0 = $val;
-		$dataset->addPoint(new Point($time0, $val0));
+		$dataset->addPoint(new Point(date('D,H:i:s', $time0), calibrate($val0)));
 	}
 	else
 	{
@@ -198,20 +220,20 @@ elseif ($_SERVER['REQUEST_METHOD'] == 'GET')
 		{
 			if ($sub == 0)
 			{
-				$label = $time;
+				$label = date('D,H:i:s', $time);
 			}
 			else
 			{
 				$label = '';
 			}
 
-			if ($val0 < $val1 && $val1 > $val)
+			if (isset($_GET['f']) && $_GET['f'] == '1' && $val0 < $val1 && $val1 > $val)
 			{
-				$dataset->addPoint(new Point($label, (int)(($val0 + $val + 1)/2)));
+				$dataset->addPoint(new Point($label, calibrate((integer)(($val0 + $val + 1)/2))));
 			}
 			else
 			{
-				$dataset->addPoint(new Point($label, $val1));
+				$dataset->addPoint(new Point($label, calibrate($val1)));
 			}
 			$time0 = $time1;
 			$sub0 = $sub1;
@@ -220,7 +242,7 @@ elseif ($_SERVER['REQUEST_METHOD'] == 'GET')
 			$sub1 = $sub;
 			$val1 = $val;
 		}
-		$dataset->addPoint(new Point('', $val1));
+		$dataset->addPoint(new Point('', calibrate($val1)));
 	}
 	$width = $stmt->num_rows * 10;
 	$stmt->free_result();
