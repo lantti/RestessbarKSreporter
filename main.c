@@ -29,8 +29,7 @@
 ADC_HANDLE adc_handle_a = ADC_HANDLE_INVALID;
 afifo* result_buffer_a;
 
-
-
+int bootup_blink_counter = 0;
 
 
 int convert_hmac_key_str(VMBYTE* hmac, char* hmac_str)
@@ -94,6 +93,43 @@ void watchdog_cb(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data)
 void delayed_report_cb(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data)
 {
 	send_delayed_report();
+}
+
+void bootup_blink_cb(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data)
+{
+	switch(bootup_blink_counter%5)
+	{
+		case 0:
+			red_led_off();
+			green_led_off();
+			blue_led_off();
+			break;
+		case 1:
+			red_led_on();
+			green_led_off();
+			blue_led_off();
+			break;
+		case 2:
+			red_led_off();
+			green_led_off();
+			blue_led_on();
+			break;
+		case 3:
+			red_led_off();
+			green_led_on();
+			blue_led_off();
+			break;
+		case 4:
+			red_led_on();
+			green_led_on();
+			blue_led_on();
+			break;
+	}
+	bootup_blink_counter++;
+	if (bootup_blink_counter > 20)
+	{
+		vm_timer_delete_non_precise(timer_id);
+	}
 }
 
 void signal_failure()
@@ -192,7 +228,12 @@ static void handle_sysevent(VMINT event, VMINT param)
 				vm_timer_create_non_precise(watchdog_interval, watchdog_cb, NULL);
 			}
 
-			vm_timer_create_non_precise(resend_interval, delayed_report_cb, NULL);
+			if (resend_interval > 0)
+			{
+				vm_timer_create_non_precise(resend_interval, delayed_report_cb, NULL);
+			}
+
+			vm_timer_create_non_precise(300, bootup_blink_cb, NULL);
 
 			start_reporting(result_buffer_a, report_interval);
 
