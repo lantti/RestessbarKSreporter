@@ -3,7 +3,7 @@
 
 const char conf_defaults[] = "cmdline_size=64\n"
 			     "apn=gprs.swisscom.ch\n"
-			     "measurement_averaging=60\n"
+			     "measurement_aggregation=60\n"
 			     "measurement_interval=1000\n"
 			     "measurement_buffer_size=12\n"
 			     "report_console=0\n"

@@ -103,7 +103,7 @@ function calibrate($val)
 	}
 	else
 	{
-		$cal_zero = 1300000;
+		$cal_zero = 1200000;
 	}
 
 	if (isset($_GET['s']) && ctype_digit($_GET['s']))
@@ -128,7 +128,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST')
 	}
 	else
 	{
-		header($_SERVER["SERVER_PROTOCOL"]." 404 Not Found"); 
+		header($_SERVER["SERVER_PROTOCOL"]." 404 Not Found");
+		echo 'fail';	
 	}
 }
 elseif ($_SERVER['REQUEST_METHOD'] == 'GET')
@@ -202,7 +203,7 @@ elseif ($_SERVER['REQUEST_METHOD'] == 'GET')
 		$time0 = $time;
 		$sub0 = $sub;
 		$val0 = $val;
-		$dataset->addPoint(new Point(date('D,H:i:s', $time0), calibrate($val0)));
+		$dataset->addPoint(new Point('', calibrate($val0)));
 	}
 	else
 	{
@@ -220,7 +221,7 @@ elseif ($_SERVER['REQUEST_METHOD'] == 'GET')
 		{
 			if ($sub == 0)
 			{
-				$label = date('D,H:i:s', $time);
+				$label = date('D,H:i:s', $time1);
 			}
 			else
 			{

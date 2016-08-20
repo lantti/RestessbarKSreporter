@@ -39,7 +39,7 @@ static afifo* result_buffer;
 static void http_done_callback(VM_HTTPS_RESULT result, VMUINT16 status, VM_HTTPS_METHOD method, char* url, char* headers, char* body)
 {
 	char buffer[64] = {0};
-	sprintf(buffer, "result: %d, status: %d, method: %d\n", result, status, method);
+	sprintf(buffer, "result: %d, status: %d, method: %d\n", (signed char)result, status, (signed char)method);
 	write_console(buffer);
 	write_console(url);
 	write_console("\n");

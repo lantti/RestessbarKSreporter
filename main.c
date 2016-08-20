@@ -149,7 +149,7 @@ static void handle_sysevent(VMINT event, VMINT param)
 	VMBYTE http_hmac_key[MAX_HMAC_KEY_LENGTH];
 	VMINT http_hmac_key_length = -1;
 	int cmdline_size;
-	int averaging;
+	int aggregation;
 	int res_buf_size;
 	int measure_interval;
 	int report_console;
@@ -178,7 +178,7 @@ static void handle_sysevent(VMINT event, VMINT param)
 					read_conf_string("report_http_host", http_host, REPORT_HOSTNAME_MAX) == FALSE ||
 					read_conf_string("report_http_path", http_path, REPORT_PATH_MAX) == FALSE ||
 					read_conf_string("report_http_hmac_key", http_hmac_key_str, 2*MAX_HMAC_KEY_LENGTH+1) == FALSE ||
-					read_conf_int("measurement_averaging", &averaging) == FALSE ||
+					read_conf_int("measurement_aggregation", &aggregation) == FALSE ||
 					read_conf_int("measurement_buffer_size", &res_buf_size) == FALSE ||
 					read_conf_int("measurement_interval", &measure_interval) == FALSE ||
 					read_conf_int("report_console", &report_console) == FALSE ||
@@ -202,7 +202,7 @@ static void handle_sysevent(VMINT event, VMINT param)
 			}
 
 			adc_handle_a = open_hx711(ADC_SCL_A, ADC_SDA_A);
-			result_buffer_a = afifo_create(averaging, res_buf_size);
+			result_buffer_a = afifo_create(aggregation, res_buf_size);
 			if (adc_handle_a == ADC_HANDLE_INVALID || result_buffer_a == NULL)
 			{
 				signal_failure();

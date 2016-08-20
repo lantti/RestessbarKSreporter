@@ -10,7 +10,7 @@
 
 typedef struct afifo afifo;
 
-afifo* afifo_create(int averaging, int size);
+afifo* afifo_create(int aggregation, int size);
 void afifo_destroy(afifo* target);
 void afifo_write(afifo* target, int value);
 VMBOOL afifo_read(afifo* source, int* value);

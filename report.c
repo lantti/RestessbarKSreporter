@@ -21,13 +21,13 @@
 struct afifo
 {
 	vm_mutex_t mutex;
-	double avg_acc;
-	int avg_complete;
-	int avg_current;
-	int* buffer;
-	int buffer_size;
-	int head;
-	int tail;
+	int* bin;
+	int bin_size;
+	int bin_head;
+	int* output_buffer;
+	int output_buffer_size;
+	int output_buffer_head;
+	int output_buffer_tail;
 	VM_TIMER_ID_NON_PRECISE report_timer;
 };
 
@@ -41,28 +41,33 @@ static char http_path[REPORT_PATH_MAX];
 static VMBYTE hmac_key[MAX_HMAC_KEY_LENGTH];
 static VMINT hmac_key_length = 0;
 
-afifo* afifo_create(int averaging, int size)
+afifo* afifo_create(int aggregation, int size)
 {
 	afifo* new_afifo;
-	write_console("afifo being created\n");
 	new_afifo = vm_calloc(sizeof(afifo));
 	if (new_afifo == NULL)
 	{
 		return NULL;
 	}
-	new_afifo->buffer = vm_calloc(size*sizeof(int));
-	if (new_afifo->buffer == NULL)
+	new_afifo->bin = vm_calloc(aggregation*sizeof(int));
+	if (new_afifo->bin == NULL)
 	{
 		vm_free(new_afifo);
 		return NULL;
 	}
-	new_afifo->buffer_size = size;
+	new_afifo->output_buffer = vm_calloc(size*sizeof(int));
+	if (new_afifo->output_buffer == NULL)
+	{
+		vm_free(new_afifo->bin);
+		vm_free(new_afifo);
+		return NULL;
+	}
+	new_afifo->bin_size = aggregation;
+	new_afifo->bin_head = 0;
+	new_afifo->output_buffer_size = size;
+	new_afifo->output_buffer_head = 0;
+	new_afifo->output_buffer_tail = 0;
 	vm_mutex_init(&new_afifo->mutex);
-	new_afifo->avg_acc = 0;
-	new_afifo->avg_complete = averaging;
-	new_afifo->avg_current = 0;
-	new_afifo->head = 0;
-	new_afifo->tail = 0;
 	new_afifo->report_timer = -1;
 	write_console("afifo created\n");
 	return new_afifo;
@@ -71,56 +76,56 @@ afifo* afifo_create(int averaging, int size)
 void afifo_destroy(afifo* target)
 {
 	vm_mutex_lock(&target->mutex);
-	vm_free(target->buffer);
+	vm_free(target->bin);
+	vm_free(target->output_buffer);
 	vm_free(target);
 }
 
 void afifo_write(afifo* target, int value)
 {
-	char buffer[64];
 	int head;
 	int tail;
 	vm_mutex_lock(&target->mutex);
-	if (target->avg_complete > 0)
+	if (target->bin_size > 1)
 	{
-		target->avg_acc += (double)value / target->avg_complete;
-		target->avg_current++;
+		head = target->bin_head;
+		while (head > 0 && target->bin[head-1] > value)
+		{
+			target->bin[head] = target->bin[head-1];
+			head--;
+		}
+		target->bin[head] = value;
+		target->bin_head++;
 	}
 	else
 	{
-		target->avg_acc = value;
+		target->bin[0] = value;
+		target->bin_head = 1;
 	}
 
-	if (target->avg_current >= target->avg_complete)
+	if (target->bin_head >= target->bin_size)
 	{
-		target->avg_current = 0;
-		target->head = (target->head + 1) % target->buffer_size;
-		target->buffer[target->head] = (int)target->avg_acc;
-		target->avg_acc = 0;
-		if (target->head == target->tail)
+		target->bin_head = 0;
+		target->output_buffer_head = (target->output_buffer_head + 1) % target->output_buffer_size;
+		target->output_buffer[target->output_buffer_head] = target->bin[target->bin_size/2];
+		if (target->output_buffer_head == target->output_buffer_tail)
 		{
-			target->tail = (target->tail + 1) % target->buffer_size;
+			target->output_buffer_tail = (target->output_buffer_tail + 1) % target->output_buffer_size;
 		}
 	}
-	head = target->head;
-	tail = target->tail;
 	vm_mutex_unlock(&target->mutex);
-	sprintf(buffer, "%d, %d\n", head, tail);
-	write_console("afifo written\n");
-	write_console(buffer);
 }
 
 VMBOOL afifo_read(afifo* source, int* value)
 {
 	vm_mutex_lock(&source->mutex);
-	if (source->head == source->tail)
+	if (source->output_buffer_head == source->output_buffer_tail)
 	{
 		vm_mutex_unlock(&source->mutex);
-		write_console("afifo empty\n");
 		return FALSE;
 	}
-	source->tail = (source->tail + 1) % source->buffer_size;
-	*value = source->buffer[source->tail];
+	source->output_buffer_tail = (source->output_buffer_tail + 1) % source->output_buffer_size;
+	*value = source->output_buffer[source->output_buffer_tail];
 	vm_mutex_unlock(&source->mutex);
 	return TRUE;
 }
@@ -128,16 +133,23 @@ VMBOOL afifo_read(afifo* source, int* value)
 
 static void http_done_callback(VM_HTTPS_RESULT result, VMUINT16 status, VM_HTTPS_METHOD method, char* url, char* headers, char* body)
 {
+	char buffer[64] = {0};
+	if (report_console)
+	{
+		sprintf(buffer, "result: %d, status: %d, method: %d\n", (signed char)result, status, (signed char)method);
+		write_console(buffer);
+		write_console(url);
+		write_console("\n");
+		write_console(headers);
+		write_console("\n");
+		write_console(body);
+		write_console("\n");
+	}
+
 	if (result == VM_HTTPS_OK)
 	{
 		vm_fs_delete(current_report_filename);
 
-		if (report_console)
-		{
-			write_console(url);
-			write_console(headers);
-			write_console(body);
-		}
 	}
 	else
 	{
@@ -151,6 +163,19 @@ static void http_done_callback(VM_HTTPS_RESULT result, VMUINT16 status, VM_HTTPS
 
 static void http_done_callback_delayed(VM_HTTPS_RESULT result, VMUINT16 status, VM_HTTPS_METHOD method, char* url, char* headers, char* body)
 {
+	char buffer[64] = {0};
+	if (report_console)
+	{
+		sprintf(buffer, "result: %d, status: %d, method: %d\n", (signed char)result, status, (signed char)method);
+		write_console(buffer);
+		write_console(url);
+		write_console("\n");
+		write_console(headers);
+		write_console("\n");
+		write_console(body);
+		write_console("\n");
+	}
+
 	if (result == VM_HTTPS_OK)
 	{
 		vm_fs_delete(current_report_filename);
@@ -262,38 +287,47 @@ void send_delayed_report()
 	char tmpf_filename[32];
 	char http_body[1024];
 
+	if (!report_http)
+	{
+		return;
+	}
 
 	find_handle = vm_fs_find_first(REPORT_TMP_FOLDER u"*.rpt", &found_file);
-	if (find_handle >= 0)
+	if (find_handle < 0)
 	{
-		if (reporter_busy == FALSE)
+		return;
+	}
+
+	if (reporter_busy == FALSE)
+	{
+		blue_led_on();
+		reporter_busy = TRUE;
+		if (report_console)
 		{
-			blue_led_on();
-			reporter_busy = TRUE;
-			vm_chset_ucs2_to_ascii(tmp_buffer, 32, found_file.filename);
-			vm_chset_ucs2_to_ascii(tmpf_filename, 32, REPORT_TMP_FOLDER);
-			strcat(tmpf_filename, tmp_buffer);
-			vm_chset_ascii_to_ucs2(current_report_filename, 64, tmpf_filename);
-			report_handle = vm_fs_open(current_report_filename, VM_FS_MODE_READ, FALSE);
-			if (report_handle >= 0)
+			write_console("sending delayed\n");
+		}
+		vm_chset_ucs2_to_ascii(tmp_buffer, 32, found_file.filename);
+		vm_chset_ucs2_to_ascii(tmpf_filename, 32, REPORT_TMP_FOLDER);
+		strcat(tmpf_filename, tmp_buffer);
+		vm_chset_ascii_to_ucs2(current_report_filename, 64, tmpf_filename);
+		report_handle = vm_fs_open(current_report_filename, VM_FS_MODE_READ, FALSE);
+		if (report_handle >= 0)
+		{
+			memset(http_body, 0, 1024);
+			res = vm_fs_read(report_handle, http_body, 1023, &bytes_read);
+			vm_fs_close(report_handle);
+			if (res >= 0)
 			{
-				memset(http_body, 0, 1024);
-				res = vm_fs_read(report_handle, http_body, 1023, &bytes_read);
-				vm_fs_close(report_handle);
-				if (res >= 0)
-				{
-					http_post(http_host, http_path, http_body, http_done_callback_delayed);
-				}
+				http_post(http_host, http_path, http_body, http_done_callback_delayed);
 			}
 		}
-		else
-		{
-			write_log("Reporter busy while sending delayed report");
-		}
-		vm_fs_find_close(find_handle);
 	}
+	else
+	{
+		write_log("Reporter busy while sending delayed report");
+	}
+	vm_fs_find_close(find_handle);
 }
-
 
 void start_reporting(afifo* source, int interval)
 {
