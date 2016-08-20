@@ -129,6 +129,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST')
 	else
 	{
 		header($_SERVER["SERVER_PROTOCOL"]." 404 Not Found");
+		header('Content-Type: text/plain');
 		echo 'fail';	
 	}
 }
