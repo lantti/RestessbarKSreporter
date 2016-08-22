@@ -92,6 +92,7 @@ static void https_response_cb(VMUINT16 request_id, VM_HTTPS_RESULT result,
 	}
 	else
 	{
+		vm_https_cancel(request_id);
 		vm_https_unset_channel(channel);
 		done_cb(result, http_status, method, url, headers, body);
 	}
@@ -106,6 +107,7 @@ static void https_read_content_cb(VMUINT16 request_id, VMUINT8 seq_num,
 	}
 	else
 	{
+		vm_https_cancel(request_id);
 		vm_https_unset_channel(channel);
 		done_cb(result, http_status, method, url, headers, body);
 	}
@@ -232,9 +234,11 @@ void init_telecom(char* apn)
 		(vm_https_cancel_response_callback)https_cancel_cb,
 		(vm_https_status_query_response_callback)https_status_query_cb
 	};
+
 	vm_gsm_gprs_apn_info_t apn_info = {0};
 
-	vm_gsm_tel_call_reg_listener((vm_gsm_tel_call_listener_callback)gsm_telephone_cb);
+	//vm_gsm_tel_call_reg_listener((vm_gsm_tel_call_listener_callback)gsm_telephone_cb);
+	//vm_gsm_sms_set_interrupt_event_handler(VM_GSM_SMS_EVENT_ID_SMS_NEW_MESSAGE, gsm_new_sms_cb, NULL);
 
 	strncpy(apn_info.apn, apn, VM_GSM_GPRS_APN_MAX_LENGTH);
 	vm_gsm_gprs_set_customized_apn_info(&apn_info);

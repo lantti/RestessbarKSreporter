@@ -88,6 +88,14 @@ void measure_end(void* buffer, int result)
 
 void watchdog_cb(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data)
 {
+	if (vm_gsm_sim_get_card_count() == 0)
+	{
+		red_led_on();
+	}
+	else
+	{
+		red_led_off();
+	}
 }
 
 void delayed_report_cb(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data)

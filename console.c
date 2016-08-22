@@ -262,6 +262,12 @@ static void run_command()
 			{
 				intvalue = VM_GSM_SIM_SIM1;
 			}
+			else
+			{
+				sprintf(buffer, "%d sim card(s) detected\n", vm_gsm_sim_get_card_count());
+				write_console(buffer);
+				break;
+			}
 			if (vm_gsm_sim_set_active_sim_card(intvalue) == VM_TRUE)
 			{
 				write_console("ok\n");
@@ -272,7 +278,29 @@ static void run_command()
 			}
 			break;
 		case 'Q':
-			vm_pwr_reboot();
+			if (cmdline[1] = 'r')
+			{
+				vm_pwr_reboot();
+			}
+			else if (cmdline[1] = 'q')
+			{
+				vm_pwr_shutdown(100);
+			}
+			else if (cmdline[1] = 's')
+			{
+				datetime.hour = 6;
+				datetime.minute = 0;
+				datetime.second = 0;
+				if (vm_pwr_scheduled_startup(&datetime, VM_PWR_STARTUP_ENABLE_CHECK_HMS))
+				{
+					write_console("ok\n");
+					vm_pwr_shutdown(100);
+				}
+				else
+				{
+					write_console("Nope!\n");
+				}
+			}
 			break;
 	}
 }
