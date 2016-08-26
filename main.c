@@ -136,6 +136,7 @@ void bootup_blink_cb(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data)
 	bootup_blink_counter++;
 	if (bootup_blink_counter > 20)
 	{
+		vm_https_set_channel(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 		vm_timer_delete_non_precise(timer_id);
 	}
 }

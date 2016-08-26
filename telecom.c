@@ -10,7 +10,11 @@
 #include "console.h"
 #include "telecom.h"
 
-static VM_HTTPS_METHOD method;
+static VMBOOL http_busy = FALSE;
+static VMBOOL channel_set = FALSE;
+static VMUINT32 request_id;
+static VMUINT8 channel_id;
+static VM_HTTPS_METHOD http_method;
 static VMUINT16 http_status;
 static char url[256];
 static char headers[256];
@@ -18,28 +22,19 @@ static char body[1024];
 
 static void (*done_cb)(VM_HTTPS_RESULT, VMUINT16, VM_HTTPS_METHOD, char*, char*, char*);
 
-static VMUINT8 retry_count = 0;
-static VMUINT8 channel;
-
-static void https_set_channel_cb(VMUINT32 req_id, VMUINT8 channel_id, VMUINT8 result)
+static void https_set_channel_cb(VMUINT32 req_id, VMUINT8 ch_id, VMUINT8 result)
 {
-	channel = channel_id;
-	vm_https_send_request(
-			req_id,
-			method,
-			VM_HTTPS_OPTION_NO_CACHE,
-			VM_HTTPS_DATA_TYPE_BUFFER,
-			1024,
-			url,
-			strlen(url),
-			headers,
-			strlen(headers),
-			body,
-			strlen(body));
+	char buffer[64];
+	sprintf(buffer, "channel set result: %d, ch: %d, req: %d\n", result, ch_id, req_id);
+	write_console(buffer);
+	channel_id = ch_id;
+	request_id = req_id;
+	channel_set = TRUE;
 
 }
 static void https_unset_channel_cb(VMUINT8 channel_id, VMUINT8 result)
 {
+	channel_set = FALSE;
 }
 static void https_release_cb(VMUINT8 result)
 {
@@ -92,9 +87,8 @@ static void https_response_cb(VMUINT16 request_id, VM_HTTPS_RESULT result,
 	}
 	else
 	{
-		vm_https_cancel(request_id);
-		vm_https_unset_channel(channel);
-		done_cb(result, http_status, method, url, headers, body);
+		http_busy = FALSE;
+		done_cb(result, http_status, http_method, url, headers, body);
 	}
 }
 static void https_read_content_cb(VMUINT16 request_id, VMUINT8 seq_num, 
@@ -107,13 +101,16 @@ static void https_read_content_cb(VMUINT16 request_id, VMUINT8 seq_num,
 	}
 	else
 	{
-		vm_https_cancel(request_id);
-		vm_https_unset_channel(channel);
-		done_cb(result, http_status, method, url, headers, body);
+		http_busy = FALSE;
+		done_cb(result, http_status, http_method, url, headers, body);
 	}
 }
 static void https_cancel_cb(VMUINT16 request_id, VMUINT8 result)
 {
+	if (result == VM_HTTPS_OK)
+	{
+		http_busy = FALSE;
+	}
 }
 static void https_status_query_cb(VMUINT8 status)
 {
@@ -240,30 +237,78 @@ void init_telecom(char* apn)
 	//vm_gsm_tel_call_reg_listener((vm_gsm_tel_call_listener_callback)gsm_telephone_cb);
 	//vm_gsm_sms_set_interrupt_event_handler(VM_GSM_SMS_EVENT_ID_SMS_NEW_MESSAGE, gsm_new_sms_cb, NULL);
 
-	strncpy(apn_info.apn, apn, VM_GSM_GPRS_APN_MAX_LENGTH);
-	vm_gsm_gprs_set_customized_apn_info(&apn_info);
+	if (apn != NULL)
+	{
+		strncpy(apn_info.apn, apn, VM_GSM_GPRS_APN_MAX_LENGTH);
+		vm_gsm_gprs_set_customized_apn_info(&apn_info);
+	}
+
+	if (http_busy == TRUE)
+	{
+		vm_https_cancel(request_id);
+		//http_busy = FALSE;
+	}
+	if (channel_set = TRUE)
+	{
+		vm_https_unset_channel(channel_id);
+		//channel_set = FALSE;
+	}
 
 	vm_https_register_context_and_callback(VM_BEARER_DATA_ACCOUNT_TYPE_GPRS_CUSTOMIZED_APN, &callbacks);
 }
 
-void http_get(char* host, char* path, void (*done_callback)(VM_HTTPS_RESULT, VMUINT16, VM_HTTPS_METHOD, char*, char*, char*)) {
+VMBOOL http_get(char* host, char* path, void (*done_callback)(VM_HTTPS_RESULT, VMUINT16, VM_HTTPS_METHOD, char*, char*, char*)) {
+	if (http_busy == TRUE || channel_set == FALSE)
+	{
+		return FALSE;
+	}
+	http_busy = TRUE;
 	memset(body,0,1024);
-	method = VM_HTTPS_METHOD_GET;
 	compose_url(host, path);
 	compose_get_headers(host);
 	done_cb = done_callback;
 	http_status = 0;
-	vm_https_set_channel(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+	http_method = VM_HTTPS_METHOD_GET;
+	vm_https_send_request(
+			request_id,
+			VM_HTTPS_METHOD_GET,
+			VM_HTTPS_OPTION_NO_CACHE,
+			VM_HTTPS_DATA_TYPE_BUFFER,
+			1024,
+			url,
+			strlen(url),
+			headers,
+			strlen(headers),
+			body,
+			strlen(body));
+	return TRUE;
 }
 
-void http_post(char* host, char* path, char* request_body, void (*done_callback)(VM_HTTPS_RESULT, VMUINT16, VM_HTTPS_METHOD, char*, char*, char*)){
+VMBOOL http_post(char* host, char* path, char* request_body, void (*done_callback)(VM_HTTPS_RESULT, VMUINT16, VM_HTTPS_METHOD, char*, char*, char*)){
+	if (http_busy == TRUE || channel_set == FALSE)
+	{
+		return FALSE;
+	}
+	http_busy = TRUE;
 	memset(body,0,1024);
-	method = VM_HTTPS_METHOD_POST;
 	compose_url(host, path);
 	compose_post_body(request_body);
 	compose_post_headers(host);
 	done_cb = done_callback;
 	http_status = 0;
-	vm_https_set_channel(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+	http_method = VM_HTTPS_METHOD_POST;
+	vm_https_send_request(
+			request_id,
+			VM_HTTPS_METHOD_POST,
+			VM_HTTPS_OPTION_NO_CACHE,
+			VM_HTTPS_DATA_TYPE_BUFFER,
+			1024,
+			url,
+			strlen(url),
+			headers,
+			strlen(headers),
+			body,
+			strlen(body));
+	return TRUE;
 }
 

@@ -16,6 +16,7 @@
 #include "vmhttps.h"
 #include "vmmemory.h"
 #include "vmdatetime.h"
+#include "vmtimer.h"
 #include "log.h"
 #include "telecom.h"
 #include "report.h"
@@ -36,6 +37,8 @@ static char* request_content = NULL;
 static ADC_HANDLE m_handle = ADC_HANDLE_INVALID;
 static afifo* result_buffer;
 
+static int shutdown_counter = 0;
+
 static void http_done_callback(VM_HTTPS_RESULT result, VMUINT16 status, VM_HTTPS_METHOD method, char* url, char* headers, char* body)
 {
 	char buffer[64] = {0};
@@ -51,6 +54,14 @@ static void http_done_callback(VM_HTTPS_RESULT result, VMUINT16 status, VM_HTTPS
 static void measure_end(void* env, int result)
 {
 	afifo_destroy(result_buffer);
+}
+static void delayed_shutdown_cb(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data)
+{
+	shutdown_counter++;
+	if (shutdown_counter > 10)
+	{
+		vm_pwr_shutdown(100);
+	}
 }
 
 static void run_command()
@@ -115,11 +126,37 @@ static void run_command()
 		case 'X':
 			if (cmdline[1] == 'g')
 			{
-				http_get(request_host, request_path, http_done_callback);
+				if (http_get(request_host, request_path, http_done_callback) == TRUE)
+				{
+					write_console("ok\n");
+				}
+				else
+				{
+					write_console("Nope!\n");
+				}
 			}
 			else if (cmdline[1] == 'p')
 			{
-				http_post(request_host, request_path, request_content, http_done_callback);
+				if (http_post(request_host, request_path, request_content, http_done_callback) == TRUE)
+				{
+					write_console("ok\n");
+				}
+				else
+				{
+					write_console("Nope!\n");
+				}
+			}
+			else if (cmdline[1] == 's')
+			{
+				vm_https_set_channel(0,0,0,0,0,0,0,0,0,0,0,0,0,0);
+			}
+			else if (cmdline[1] == 'u')
+			{
+				vm_https_unset_channel(0);
+			}
+			else if (cmdline[1] == 'i')
+			{
+				init_telecom(NULL);
 			}
 			break;
 		case 'N':
@@ -277,30 +314,25 @@ static void run_command()
 				write_console("fail\n");
 			}
 			break;
+		case 'L':
+			datetime.year = 2000;
+			datetime.month = 1;
+			datetime.day = 1;
+			datetime.hour = 6;
+			datetime.minute = 30;
+			datetime.second = 30;
+			if (vm_pwr_scheduled_startup(&datetime, VM_PWR_STARTUP_ENABLE_CHECK_HMS))
+			{
+				write_console("ok\n");
+			}
+			else
+			{
+				write_console("Nope!\n");
+			}
+			break;
 		case 'Q':
-			if (cmdline[1] = 'r')
-			{
-				vm_pwr_reboot();
-			}
-			else if (cmdline[1] = 'q')
-			{
-				vm_pwr_shutdown(100);
-			}
-			else if (cmdline[1] = 's')
-			{
-				datetime.hour = 6;
-				datetime.minute = 0;
-				datetime.second = 0;
-				if (vm_pwr_scheduled_startup(&datetime, VM_PWR_STARTUP_ENABLE_CHECK_HMS))
-				{
-					write_console("ok\n");
-					vm_pwr_shutdown(100);
-				}
-				else
-				{
-					write_console("Nope!\n");
-				}
-			}
+			write_console("Shutting down...\n");
+			vm_timer_create_non_precise(1000, delayed_shutdown_cb, NULL);
 			break;
 	}
 }
