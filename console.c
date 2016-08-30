@@ -265,20 +265,6 @@ static void run_command()
 			sprintf(buffer, "new time: %u\n", unixtime);
 			write_console(buffer);
 			break;
-		case 'O':
-			m_handle = open_hx711(43, 44);
-			result_buffer = afifo_create(10, 60);
-			set_hx711_a128(m_handle, 1000, afifo_write, result_buffer);
-			set_report_http_host("requestb.in");
-			set_report_http_path("/1bh1ej61");
-			enable_console_report();
-			enable_http_report();
-			start_reporting(result_buffer, 60000);
-			break;
-		case 'C':
-			stop_reporting(result_buffer);
-			close_hx711(m_handle, measure_end, NULL);
-			break;
 		case 'V':
 			while (afifo_read(result_buffer, &intvalue) == TRUE)
 			{
@@ -288,7 +274,7 @@ static void run_command()
 			write_console("\n");
 			break;
 		case 'D':
-			send_delayed_report();
+			send_report();
 			break;
 		case 'M':
 			if (cmdline[1] == '0')

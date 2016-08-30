@@ -28,11 +28,9 @@ struct afifo
 	int output_buffer_size;
 	int output_buffer_head;
 	int output_buffer_tail;
-	VM_TIMER_ID_NON_PRECISE report_timer;
 };
 
 
-static VMBOOL reporter_busy = FALSE;
 static VMWCHAR current_report_filename[32];
 static VMBOOL report_http = 0;
 static VMBOOL report_console = 0;
@@ -40,6 +38,7 @@ static char http_host[REPORT_HOSTNAME_MAX];
 static char http_path[REPORT_PATH_MAX];
 static VMBYTE hmac_key[MAX_HMAC_KEY_LENGTH];
 static VMINT hmac_key_length = 0;
+static int http_failure_count = 0;
 
 afifo* afifo_create(int aggregation, int size)
 {
@@ -68,7 +67,6 @@ afifo* afifo_create(int aggregation, int size)
 	new_afifo->output_buffer_head = 0;
 	new_afifo->output_buffer_tail = 0;
 	vm_mutex_init(&new_afifo->mutex);
-	new_afifo->report_timer = -1;
 	write_console("afifo created\n");
 	return new_afifo;
 }
@@ -149,43 +147,16 @@ static void http_done_callback(VM_HTTPS_RESULT result, VMUINT16 status, VM_HTTPS
 	if (result == VM_HTTPS_OK)
 	{
 		vm_fs_delete(current_report_filename);
-
+		http_failure_count = 0;
 	}
 	else
 	{
-		write_log("Sending failed, rebooting");
-		vm_pwr_reboot();
+		http_failure_count++;
 	}
-
-	reporter_busy = FALSE;
 	blue_led_off();
 }
 
-static void http_done_callback_delayed(VM_HTTPS_RESULT result, VMUINT16 status, VM_HTTPS_METHOD method, char* url, char* headers, char* body)
-{
-	char buffer[64] = {0};
-	if (report_console)
-	{
-		sprintf(buffer, "result: %d, status: %d, method: %d\n", (signed char)result, status, (signed char)method);
-		write_console(buffer);
-		write_console(url);
-		write_console("\n");
-		write_console(headers);
-		write_console("\n");
-		write_console(body);
-		write_console("\n");
-	}
-
-	if (result == VM_HTTPS_OK)
-	{
-		vm_fs_delete(current_report_filename);
-	}
-
-	reporter_busy = FALSE;
-	blue_led_off();
-}
-
-static void report_timer_callback(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data)
+void compile_report(afifo* source)
 {
 	VMINT result;
 	VMINT tmpf_handle;
@@ -196,87 +167,60 @@ static void report_timer_callback(VM_TIMER_ID_NON_PRECISE timer_id, void* user_d
 	VMUINT rtc_time;
 	VMBYTE hmac[20];
 	char tmp_buffer[32];
-	char http_body[1024];
+	char report_text[1024];
 	VMWCHAR tmpf_w_filename[32];
-	afifo* source;
 
-	source = (afifo*)user_data;
+	strcpy(report_text, "mes=");
 
-
-	if (report_http) 
-	{
-		strcpy(http_body, "mes=");
-	}
-
-	while(afifo_read(source, &result))
+	while(afifo_read(source, &result) && result_count < 80)
 	{
 		result_count++;
 		sprintf(tmp_buffer, "%d_", result);
-		if (report_console) 
-		{
-			write_console(tmp_buffer);
-		}
-		if (report_http && result_count < 80)
-		{
-			strcat(http_body, tmp_buffer);
-		}
+		strcat(report_text, tmp_buffer);
 	}
 
-	if (report_http)
+	strcat(report_text, "&time=");
+	vm_time_get_unix_time(&rtc_time);
+	sprintf(tmp_buffer, "%u", rtc_time);
+	strcat(report_text, tmp_buffer);
+
+	vm_chset_ucs2_to_ascii(tmpf_filename, 32, REPORT_TMP_FOLDER);
+	strcat(tmpf_filename, tmp_buffer);
+	strcat(tmpf_filename, ".rpt");
+	
+	strcat(report_text, "&sig=");
+	vm_ssl_sha1_hmac(hmac_key, hmac_key_length, report_text, strlen(report_text), hmac);
+	memset(tmp_buffer, 0, 32);
+	base64_length = 32;
+	vm_ssl_base64_encode(tmp_buffer, &base64_length, hmac, 20);
+	for (int i=0;i<base64_length;i++)
 	{
-		strcat(http_body, "&time=");
-		vm_time_get_unix_time(&rtc_time);
-		sprintf(tmp_buffer, "%u", rtc_time);
-		strcat(http_body, tmp_buffer);
-		vm_chset_ucs2_to_ascii(tmpf_filename, 32, REPORT_TMP_FOLDER);
-		strcat(tmpf_filename, tmp_buffer);
-		strcat(tmpf_filename, ".rpt");
-		strcat(http_body, "&sig=");
-		vm_ssl_sha1_hmac(hmac_key, hmac_key_length, http_body, strlen(http_body), hmac);
-		memset(tmp_buffer, 0, 32);
-		base64_length = 32;
-		vm_ssl_base64_encode(tmp_buffer, &base64_length, hmac, 20);
-		for (int i=0;i<base64_length;i++)
+		if (tmp_buffer[i] == '+')
 		{
-			if (tmp_buffer[i] == '+')
-			{
-				tmp_buffer[i] = '-';
-			}
-			else if (tmp_buffer[i] == '/')
-			{
-				tmp_buffer[i] = '_';
-			}
-			else if (tmp_buffer[i] == '=')
-			{
-				tmp_buffer[i] = 0;
-			}
+			tmp_buffer[i] = '-';
 		}
-		strcat(http_body, tmp_buffer);
+		else if (tmp_buffer[i] == '/')
+		{
+			tmp_buffer[i] = '_';
+		}
+		else if (tmp_buffer[i] == '=')
+		{
+			tmp_buffer[i] = 0;
+		}
+	}
+	strcat(report_text, tmp_buffer);
 
-		vm_chset_ascii_to_ucs2(tmpf_w_filename, 64, tmpf_filename);
-		tmpf_handle = vm_fs_open(tmpf_w_filename, VM_FS_MODE_CREATE_ALWAYS_WRITE, VM_FALSE);
-		if (tmpf_handle >= 0)
-		{
-			vm_fs_write(tmpf_handle, http_body, strlen(http_body), &tmpf_written);
-			vm_fs_close(tmpf_handle);
-		}
-
-		if (reporter_busy == FALSE)
-		{
-			blue_led_on();
-			reporter_busy = TRUE;
-			vm_chset_convert(VM_CHSET_ENCODING_UCS2, VM_CHSET_ENCODING_UCS2, (VMCHAR*)tmpf_w_filename, (VMCHAR*)current_report_filename, 64);
-			http_post(http_host, http_path, http_body, http_done_callback);
-		}
-		else
-		{
-			write_log("Reporter busy while sending new report");
-		}
+	vm_chset_ascii_to_ucs2(tmpf_w_filename, 64, tmpf_filename);
+	tmpf_handle = vm_fs_open(tmpf_w_filename, VM_FS_MODE_CREATE_ALWAYS_WRITE, VM_FALSE);
+	if (tmpf_handle >= 0)
+	{
+		vm_fs_write(tmpf_handle, report_text, strlen(report_text), &tmpf_written);
+		vm_fs_close(tmpf_handle);
 	}
 }
 
 
-void send_delayed_report()
+void send_report()
 {
 	vm_fs_info_t found_file;
 	VM_FS_HANDLE find_handle;
@@ -297,51 +241,32 @@ void send_delayed_report()
 	{
 		return;
 	}
-
-	if (reporter_busy == FALSE)
+	blue_led_on();
+	if (report_console)
 	{
-		blue_led_on();
-		reporter_busy = TRUE;
-		if (report_console)
-		{
-			write_console("sending delayed\n");
-		}
-		vm_chset_ucs2_to_ascii(tmp_buffer, 32, found_file.filename);
-		vm_chset_ucs2_to_ascii(tmpf_filename, 32, REPORT_TMP_FOLDER);
-		strcat(tmpf_filename, tmp_buffer);
-		vm_chset_ascii_to_ucs2(current_report_filename, 64, tmpf_filename);
-		report_handle = vm_fs_open(current_report_filename, VM_FS_MODE_READ, FALSE);
-		if (report_handle >= 0)
-		{
-			memset(http_body, 0, 1024);
-			res = vm_fs_read(report_handle, http_body, 1023, &bytes_read);
-			vm_fs_close(report_handle);
-			if (res >= 0)
-			{
-				http_post(http_host, http_path, http_body, http_done_callback_delayed);
-			}
-		}
+		write_console("sending report\n");
 	}
-	else
+	vm_chset_ucs2_to_ascii(tmp_buffer, 32, found_file.filename);
+	vm_chset_ucs2_to_ascii(tmpf_filename, 32, REPORT_TMP_FOLDER);
+	strcat(tmpf_filename, tmp_buffer);
+	vm_chset_ascii_to_ucs2(current_report_filename, 64, tmpf_filename);
+	report_handle = vm_fs_open(current_report_filename, VM_FS_MODE_READ, FALSE);
+	if (report_handle >= 0)
 	{
-		write_log("Reporter busy while sending delayed report");
+		memset(http_body, 0, 1024);
+		res = vm_fs_read(report_handle, http_body, 1023, &bytes_read);
+		vm_fs_close(report_handle);
+		if (res >= 0)
+		{
+			http_post(http_host, http_path, http_body, http_done_callback);
+		}
 	}
 	vm_fs_find_close(find_handle);
 }
 
-void start_reporting(afifo* source, int interval)
+int http_failures()
 {
-	if (source->report_timer >= 0)
-	{
-		stop_reporting(source);
-	}
-	source->report_timer = vm_timer_create_non_precise(interval, report_timer_callback, source);
-}
-
-void stop_reporting(afifo* source)
-{
-	vm_timer_delete_non_precise(source->report_timer);
-	source->report_timer = -1;
+	return http_failure_count;
 }
 
 void enable_http_report()

@@ -30,7 +30,9 @@ ADC_HANDLE adc_handle_a = ADC_HANDLE_INVALID;
 afifo* result_buffer_a;
 
 int bootup_blink_counter = 0;
-
+VM_TIMER_ID_NON_PRECISE watchdog_timer_id;
+VM_TIMER_ID_NON_PRECISE report_send_timer_id;
+VM_TIMER_ID_NON_PRECISE report_write_timer_id;
 
 int convert_hmac_key_str(VMBYTE* hmac, char* hmac_str)
 {
@@ -88,6 +90,8 @@ void measure_end(void* buffer, int result)
 
 void watchdog_cb(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data)
 {
+	vm_date_time_t datetime;
+
 	if (vm_gsm_sim_get_card_count() == 0)
 	{
 		red_led_on();
@@ -96,11 +100,34 @@ void watchdog_cb(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data)
 	{
 		red_led_off();
 	}
+
+	if (http_failures() > 10)
+	{
+		vm_pwr_reboot();
+	}
+
+	vm_time_get_date_time(&datetime);
+	if (datetime.hour > 21)
+	{
+		datetime.year = 2000;
+		datetime.month = 1;
+		datetime.day = 1;
+		datetime.hour = 6;
+		datetime.minute = 30;
+		datetime.second = 30;
+		vm_pwr_scheduled_startup(&datetime, VM_PWR_STARTUP_ENABLE_CHECK_HMS);
+		vm_pwr_shutdown(100);
+	}
 }
 
-void delayed_report_cb(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data)
+void report_send_cb(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data)
 {
-	send_delayed_report();
+	send_report();
+}
+
+void report_write_cb(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data)
+{
+	compile_report(result_buffer_a);
 }
 
 void bootup_blink_cb(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data)
@@ -164,7 +191,7 @@ static void handle_sysevent(VMINT event, VMINT param)
 	int report_console;
 	int report_http;
 	int report_interval;
-	int resend_interval;
+	int send_interval;
 	int watchdog_interval;
 
 
@@ -193,8 +220,8 @@ static void handle_sysevent(VMINT event, VMINT param)
 					read_conf_int("report_console", &report_console) == FALSE ||
 					read_conf_int("report_http", &report_http) == FALSE ||
 					read_conf_int("watchdog_interval", &watchdog_interval) == FALSE ||
-					read_conf_int("resend_interval", &resend_interval) == FALSE ||
-					read_conf_int("report_interval", &report_interval) == FALSE
+					read_conf_int("report_send_interval", &send_interval) == FALSE ||
+					read_conf_int("report_write_interval", &report_interval) == FALSE
 			   )
 			{
 				close_conf();
@@ -234,23 +261,28 @@ static void handle_sysevent(VMINT event, VMINT param)
 
 			if (watchdog_interval > 0)
 			{
-				vm_timer_create_non_precise(watchdog_interval, watchdog_cb, NULL);
+				watchdog_timer_id = vm_timer_create_non_precise(watchdog_interval, watchdog_cb, NULL);
 			}
 
-			if (resend_interval > 0)
+			if (send_interval > 0)
 			{
-				vm_timer_create_non_precise(resend_interval, delayed_report_cb, NULL);
+				report_send_timer_id = vm_timer_create_non_precise(send_interval, report_send_cb, NULL);
+			}
+
+			if (report_interval > 0)
+			{
+				report_write_timer_id = vm_timer_create_non_precise(report_interval, report_write_cb, NULL);
 			}
 
 			vm_timer_create_non_precise(300, bootup_blink_cb, NULL);
-
-			start_reporting(result_buffer_a, report_interval);
 
 			write_log("System started!");
 			break;
 
 		case VM_EVENT_QUIT:
-			stop_reporting(result_buffer_a);
+			vm_timer_delete_non_precise(watchdog_timer_id);
+			vm_timer_delete_non_precise(report_send_timer_id);
+			vm_timer_delete_non_precise(report_write_timer_id);
 			close_hx711(adc_handle_a, measure_end, result_buffer_a);
 			stop_console();
 			free_leds();
