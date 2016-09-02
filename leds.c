@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include "vmtype.h"
+#include "vmtimer.h"
 #include "vmsystem.h"
 #include "vmdcl.h"
 #include "vmdcl_gpio.h"
@@ -9,6 +10,12 @@
 VM_DCL_HANDLE gpio_red_handle = VM_DCL_HANDLE_INVALID;
 VM_DCL_HANDLE gpio_green_handle = VM_DCL_HANDLE_INVALID;
 VM_DCL_HANDLE gpio_blue_handle = VM_DCL_HANDLE_INVALID;
+
+static void blink_cb(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data)
+{
+	green_led_off();
+	vm_timer_delete_non_precise(timer_id);	
+}
 
 void init_leds()
 {
@@ -72,4 +79,10 @@ void blue_led_on()
 void blue_led_off()
 {
 	vm_dcl_control(gpio_blue_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
+}
+
+void blink_green()
+{
+	green_led_on();
+	vm_timer_create_non_precise(1000, blink_cb, NULL);
 }

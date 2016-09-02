@@ -13,4 +13,5 @@ void green_led_on();
 void green_led_off();
 void blue_led_on();
 void blue_led_off();
+void blink_green();
 #endif /* LEDS_H */

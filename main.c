@@ -30,6 +30,11 @@ ADC_HANDLE adc_handle_a = ADC_HANDLE_INVALID;
 afifo* result_buffer_a;
 
 int bootup_blink_counter = 0;
+int sleep_enabled = 0;
+int sleep_time;
+int wakeup_time;
+int http_failure_reboot_enabled = 0;
+int http_failure_limit;
 VM_TIMER_ID_NON_PRECISE watchdog_timer_id;
 VM_TIMER_ID_NON_PRECISE report_send_timer_id;
 VM_TIMER_ID_NON_PRECISE report_write_timer_id;
@@ -88,10 +93,8 @@ void measure_end(void* buffer, int result)
 	afifo_destroy((afifo*)buffer);
 }
 
-void watchdog_cb(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data)
+void report_send_cb(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data)
 {
-	vm_date_time_t datetime;
-
 	if (vm_gsm_sim_get_card_count() == 0)
 	{
 		red_led_on();
@@ -99,39 +102,44 @@ void watchdog_cb(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data)
 	else
 	{
 		red_led_off();
+		send_report();
 	}
-
-	if (http_failures() > 10)
-	{
-		vm_pwr_reboot();
-	}
-
-	vm_time_get_date_time(&datetime);
-	if (datetime.hour > 21)
-	{
-		datetime.year = 2000;
-		datetime.month = 1;
-		datetime.day = 1;
-		datetime.hour = 6;
-		datetime.minute = 30;
-		datetime.second = 30;
-		vm_pwr_scheduled_startup(&datetime, VM_PWR_STARTUP_ENABLE_CHECK_HMS);
-		vm_pwr_shutdown(100);
-	}
-}
-
-void report_send_cb(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data)
-{
-	send_report();
 }
 
 void report_write_cb(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data)
 {
+	vm_date_time_t datetime;
+	int current_time;
+
 	compile_report(result_buffer_a);
+
+	if (sleep_enabled)
+	{
+		vm_time_get_date_time(&datetime);
+		current_time = datetime.hour * 60 + datetime.minute;
+		if ((current_time < wakeup_time && current_time > sleep_time) || (sleep_time > wakeup_time && (current_time < wakeup_time || current_time > sleep_time)))
+		{
+			datetime.year = 2000;
+			datetime.month = 1;
+			datetime.day = 1;
+			datetime.hour = wakeup_time / 60;
+			datetime.minute = wakeup_time % 60;
+			datetime.second = 0;
+			vm_pwr_scheduled_startup(&datetime, VM_PWR_STARTUP_ENABLE_CHECK_HMS);
+			vm_pwr_shutdown(100);
+			return;
+		}
+	}
+
+	if (http_failure_reboot_enabled && http_failures() > http_failure_limit)
+	{
+		vm_pwr_reboot();
+	}
 }
 
 void bootup_blink_cb(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data)
 {
+	vm_date_time_t datetime;
 	switch(bootup_blink_counter%5)
 	{
 		case 0:
@@ -163,8 +171,19 @@ void bootup_blink_cb(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data)
 	bootup_blink_counter++;
 	if (bootup_blink_counter > 20)
 	{
-		vm_https_set_channel(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-		vm_timer_delete_non_precise(timer_id);
+		if (vm_gsm_sim_get_card_count() == 0)
+		{
+			vm_time_get_date_time(&datetime);
+			datetime.second = (datetime.second + 20) % 60;
+			vm_pwr_scheduled_startup(&datetime, VM_PWR_STARTUP_ENABLE_CHECK_S);
+			vm_pwr_shutdown(100);
+			return;
+		}
+		else
+		{
+			vm_https_set_channel(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+			vm_timer_delete_non_precise(timer_id);
+		}
 	}
 }
 
@@ -192,7 +211,10 @@ static void handle_sysevent(VMINT event, VMINT param)
 	int report_http;
 	int report_interval;
 	int send_interval;
-	int watchdog_interval;
+	int sleep_h;
+	int sleep_m;
+	int wakeup_h;
+	int wakeup_m;
 
 
 	switch (event) {
@@ -219,7 +241,13 @@ static void handle_sysevent(VMINT event, VMINT param)
 					read_conf_int("measurement_interval", &measure_interval) == FALSE ||
 					read_conf_int("report_console", &report_console) == FALSE ||
 					read_conf_int("report_http", &report_http) == FALSE ||
-					read_conf_int("watchdog_interval", &watchdog_interval) == FALSE ||
+					read_conf_int("http_failure_limit", &http_failure_limit) == FALSE ||
+					read_conf_int("reboot_on_http_fail", &http_failure_reboot_enabled) == FALSE ||
+					read_conf_int("sleep_hour", &sleep_h) == FALSE ||
+					read_conf_int("sleep_minute", &sleep_m) == FALSE ||
+					read_conf_int("wakeup_hour", &wakeup_h) == FALSE ||
+					read_conf_int("wakeup_minute", &wakeup_m) == FALSE ||
+					read_conf_int("daily_sleep", &sleep_enabled) == FALSE ||
 					read_conf_int("report_send_interval", &send_interval) == FALSE ||
 					read_conf_int("report_write_interval", &report_interval) == FALSE
 			   )
@@ -229,6 +257,9 @@ static void handle_sysevent(VMINT event, VMINT param)
 				break;
 			}
 			close_conf();
+
+			sleep_time = (sleep_h * 60 + sleep_m) % 1440;
+			wakeup_time = (wakeup_h * 60 + wakeup_m) % 1440;
 
 			http_hmac_key_length = convert_hmac_key_str(http_hmac_key, http_hmac_key_str);
 			if (http_hmac_key_length < 0)
@@ -259,11 +290,6 @@ static void handle_sysevent(VMINT event, VMINT param)
 
 			init_telecom(apn);
 
-			if (watchdog_interval > 0)
-			{
-				watchdog_timer_id = vm_timer_create_non_precise(watchdog_interval, watchdog_cb, NULL);
-			}
-
 			if (send_interval > 0)
 			{
 				report_send_timer_id = vm_timer_create_non_precise(send_interval, report_send_cb, NULL);
@@ -276,7 +302,7 @@ static void handle_sysevent(VMINT event, VMINT param)
 
 			vm_timer_create_non_precise(300, bootup_blink_cb, NULL);
 
-			write_log("System started!");
+			//write_log("System started!");
 			break;
 
 		case VM_EVENT_QUIT:
@@ -289,9 +315,9 @@ static void handle_sysevent(VMINT event, VMINT param)
 			write_log("System stopped.");
 			stop_log();
 			break;
-		default:
-			sprintf(text_buffer, "SysEvent: %u:%u", event, param);
-			write_log(text_buffer);
+			//default:
+			//sprintf(text_buffer, "SysEvent: %u:%u", event, param);
+			//write_log(text_buffer);
 
 	}
 }

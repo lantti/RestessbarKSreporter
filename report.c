@@ -148,6 +148,7 @@ static void http_done_callback(VM_HTTPS_RESULT result, VMUINT16 status, VM_HTTPS
 	{
 		vm_fs_delete(current_report_filename);
 		http_failure_count = 0;
+		blink_green();
 	}
 	else
 	{
